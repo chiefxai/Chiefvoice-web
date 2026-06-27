@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChiefVoice Admin Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  
+  <div class="glow-bg"></div>
+
+  <!-- Main Container -->
+  <div class="container">
+    
+    <!-- Top Header -->
+    <header class="header">
+      <div class="logo-area">
+        <span class="logo-icon">🎙️</span>
+        <div>
+          <h1>ChiefVoice</h1>
+          <p class="subtitle">Live Voice Agent Management Console</p>
+        </div>
+      </div>
+      <div class="server-status">
+        <span class="status-indicator"></span>
+        <span class="status-text">Backend Connected</span>
+      </div>
+    </header>
+
+    <!-- Overview Metrics Strip -->
+    <section class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-icon">📞</div>
+        <div class="metric-info">
+          <h3>Total Calls</h3>
+          <p id="metric-total-calls">0</p>
+        </div>
+      </div>
+      <div class="metric-card active-sessions">
+        <div class="metric-icon active-icon">📡</div>
+        <div class="metric-info">
+          <h3>Active Calls</h3>
+          <div class="active-count-wrap">
+            <span id="metric-active-calls">0</span>
+            <span class="pulse-blip"></span>
+          </div>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon">⏱️</div>
+        <div class="metric-info">
+          <h3>Avg Duration</h3>
+          <p id="metric-avg-duration">0s</p>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon">💳</div>
+        <div class="metric-info">
+          <h3>Credits Used</h3>
+          <p id="metric-credits-consumed">$0.00</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Workspace Layout -->
+    <div class="workspace">
+      
+      <!-- Left Column: Controls & Prompt -->
+      <div class="left-col">
+        
+        <!-- Voice Persona Card Selector -->
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Voice Persona Selector</h2>
+            <span class="tag">Next Call Only</span>
+          </div>
+          
+          <div class="voice-cards">
+            <div class="voice-card active" data-voice="Arjun">
+              <span class="voice-avatar">👨🏽‍💼</span>
+              <div class="voice-details">
+                <h4>Arjun</h4>
+                <p>Warm & expressive (Male)</p>
+              </div>
+            </div>
+            <div class="voice-card" data-voice="Priya">
+              <span class="voice-avatar">👩🏽‍💼</span>
+              <div class="voice-details">
+                <h4>Priya</h4>
+                <p>Friendly & clear (Female)</p>
+              </div>
+            </div>
+            <div class="voice-card" data-voice="Dev">
+              <span class="voice-avatar">👨🏻‍💻</span>
+              <div class="voice-details">
+                <h4>Dev</h4>
+                <p>Calm & professional (Male)</p>
+              </div>
+            </div>
+            <div class="voice-card" data-voice="Kavya">
+              <span class="voice-avatar">👩🏻‍💼</span>
+              <div class="voice-details">
+                <h4>Kavya</h4>
+                <p>Formal & polite (Female)</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sliders -->
+          <div class="sliders-wrap">
+            <div class="slider-group">
+              <div class="slider-label">
+                <span>Emotion Intensity</span>
+                <span id="emotion-val">50%</span>
+              </div>
+              <input type="range" id="slider-emotion" min="0" max="100" value="50">
+            </div>
+            <div class="slider-group">
+              <div class="slider-label">
+                <span>Speech Speed</span>
+                <span id="speed-val">50%</span>
+              </div>
+              <input type="range" id="slider-speed" min="0" max="100" value="50">
+            </div>
+            <div class="slider-group">
+              <div class="slider-label">
+                <span>Friendliness</span>
+                <span id="friendliness-val">50%</span>
+              </div>
+              <input type="range" id="slider-friendliness" min="0" max="100" value="50">
+            </div>
+          </div>
+        </div>
+
+        <!-- AI System Prompt Editor -->
+        <div class="panel">
+          <div class="panel-header">
+            <h2>AI System Prompt Editor</h2>
+            <div class="preset-wrap">
+              <select id="preset-selector">
+                <option value="Tanglish">Chennai Tanglish Support</option>
+                <option value="Support">Standard English Support</option>
+                <option value="Sales">Casual Sales Agent</option>
+              </select>
+            </div>
+          </div>
+          <div class="textarea-wrap">
+            <textarea id="system-prompt-editor" placeholder="Write system instructions here..."></textarea>
+          </div>
+          <button id="save-prompt-btn" class="btn btn-primary">Apply Config Settings</button>
+        </div>
+
+      </div>
+
+      <!-- Right Column: Call Logs & Credits -->
+      <div class="right-col">
+        
+        <!-- Call Logs & Recordings -->
+        <div class="panel recordings-panel">
+          <div class="panel-header">
+            <h2>Recent Call Recordings</h2>
+            <button id="refresh-logs-btn" class="btn btn-outline">↻ Refresh</button>
+          </div>
+          
+          <div class="recordings-list-wrap">
+            <table class="recordings-table">
+              <thead>
+                <tr>
+                  <th>Caller</th>
+                  <th>Agent</th>
+                  <th>Duration</th>
+                  <th>Sentiment</th>
+                  <th>Date & Time</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="calls-table-body">
+                <tr>
+                  <td colspan="6" class="table-empty">Loading call records...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Credit Breakdown Panel -->
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Credit Consumption</h2>
+            <span class="credit-renewal">Renews: July 27, 2026</span>
+          </div>
+          
+          <div class="credit-info">
+            <div class="credit-totals">
+              <span class="credits-used">$2.40 / $5.00</span>
+              <span class="credits-percent">48% Consumed</span>
+            </div>
+            <div class="progress-bar-container">
+              <div class="progress-bar" style="width: 48%;"></div>
+            </div>
+            
+            <div class="credit-breakdown-details">
+              <div class="breakdown-item">
+                <div class="breakdown-bullet color-audio"></div>
+                <div class="breakdown-label">Gemini Live Audio</div>
+                <div class="breakdown-value">$1.80</div>
+              </div>
+              <div class="breakdown-item">
+                <div class="breakdown-bullet color-transcribe"></div>
+                <div class="breakdown-label">Transcription API</div>
+                <div class="breakdown-value">$0.45</div>
+              </div>
+              <div class="breakdown-item">
+                <div class="breakdown-bullet color-storage"></div>
+                <div class="breakdown-label">Supabase Storage</div>
+                <div class="breakdown-value">$0.15</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Audio Player Modal / Float -->
+  <div id="audio-player-bar" class="audio-player-bar hidden">
+    <div class="audio-player-content">
+      <div class="audio-info">
+        <span class="player-icon">🔊</span>
+        <div>
+          <h5 id="player-caller-id">Unknown Caller</h5>
+          <p id="player-call-meta">Duration: 0s • Arjun</p>
+        </div>
+      </div>
+      <audio id="main-audio-element" controls></audio>
+      <button id="close-player-btn" class="btn btn-close">×</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

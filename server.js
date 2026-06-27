@@ -1,38 +1,104 @@
 // ============================================================
 // server.js
 //
-// Two things on one port:
-//   HTTP  → serves public/index.html (the browser UI)
-//   WS    → /session   (browser connects here; we proxy to Gemini Live)
-//
-// Flow:
-//   1. User opens browser → clicks "Start Call"
-//   2. Browser captures mic audio via getUserMedia (PCM 16kHz)
-//   3. Browser opens WebSocket to /session
-//   4. Server opens Gemini Live session for that browser connection
-//   5. Audio flows:  Browser → WS → Server → Gemini Live
-//                    Gemini Live → Server → WS → Browser (audio plays)
-//
-// Why a server at all?
-//   Gemini Live API key must stay server-side (never exposed to browser).
-//   The server is a thin authenticated proxy — no audio processing needed
-//   because the browser sends PCM 16kHz directly, which is what Gemini wants.
+// HTTP Server + WebSocket Proxy + REST API for Admin Dashboard
 // ============================================================
 
 require("dotenv").config();
 const http = require("http");
 const express = require("express");
+const cors = require("cors");
 const path = require("path");
 const { WebSocketServer } = require("ws");
+const { createClient } = require("@supabase/supabase-js");
 const { handleBrowserSession } = require("./services/geminiProxy");
+const { getConfig, updateConfig } = require("./services/config");
 
 const app = express();
 
 // Trust Railway / Render / Heroku reverse proxy (needed for correct req.protocol)
 app.set("trust proxy", 1);
 
+// Middlewares
+app.use(cors()); // Enable CORS for decoupled dashboard
+app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
+
+// Supabase client initialization
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
+let supabase = null;
+if (supabaseUrl && supabaseKey) {
+  supabase = createClient(supabaseUrl, supabaseKey);
+  console.log("✅ Supabase client initialized");
+} else {
+  console.log("⚠️ Supabase credentials missing — database features disabled");
+}
+
+// Track active sessions in real-time
+let activeSessionsCount = 0;
+
+// REST API Endpoints
 app.get("/health", (_req, res) => res.json({ ok: true }));
+
+// Get active configuration (voice settings and prompt editor)
+app.get("/api/config", (req, res) => {
+  res.json(getConfig());
+});
+
+// Update configuration
+app.post("/api/config", (req, res) => {
+  const updated = updateConfig(req.body);
+  res.json(updated);
+});
+
+// Get call logs from Supabase
+app.get("/api/calls", async (req, res) => {
+  if (!supabase) {
+    return res.json({ calls: [], warning: "Supabase not configured" });
+  }
+  try {
+    const { data, error } = await supabase
+      .from("calls")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    res.json({ calls: data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get dashboard metrics
+app.get("/api/metrics", async (req, res) => {
+  let totalCalls = 0;
+  let avgDuration = 0;
+  let creditsConsumed = 0.00;
+
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.from("calls").select("duration_seconds");
+      if (!error && data) {
+        totalCalls = data.length;
+        if (totalCalls > 0) {
+          const totalDuration = data.reduce((sum, c) => sum + (c.duration_seconds || 0), 0);
+          avgDuration = Math.round(totalDuration / totalCalls);
+          // Credit calculation: $0.06 per minute of audio (dummy estimation for Gemini Live + Transcribe + Storage)
+          creditsConsumed = parseFloat(((totalDuration / 60) * 0.06).toFixed(2));
+        }
+      }
+    } catch (err) {
+      console.error("Error calculating metrics from Supabase:", err.message);
+    }
+  }
+
+  res.json({
+    totalCalls,
+    activeSessions: activeSessionsCount,
+    avgDuration,
+    creditsConsumed,
+  });
+});
 
 app.get("/list-models", async (req, res) => {
   try {
@@ -74,19 +140,24 @@ app.get("/list-models", async (req, res) => {
 
 const server = http.createServer(app);
 
-// WebSocket — Railway proxies wss:// → ws:// to our process
-// So we just listen for plain WS connections; TLS is terminated at the edge.
+// WebSocket setup
 const wss = new WebSocketServer({ server, path: "/session" });
 
 wss.on("connection", (ws, req) => {
+  activeSessionsCount++;
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-  console.log(`🌐 Browser connected from ${ip}`);
+  console.log(`🌐 Browser connected from ${ip} | Active: ${activeSessionsCount}`);
+  
   handleBrowserSession(ws);
+
+  ws.on("close", () => {
+    activeSessionsCount = Math.max(0, activeSessionsCount - 1);
+    console.log(`🌐 Browser disconnected | Active: ${activeSessionsCount}`);
+  });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, "0.0.0.0", () => {
-  // Railway injects RAILWAY_PUBLIC_DOMAIN; Render injects RENDER_EXTERNAL_URL
   const publicUrl =
     process.env.RAILWAY_PUBLIC_DOMAIN
       ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`

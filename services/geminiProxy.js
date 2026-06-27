@@ -1,44 +1,80 @@
 // ============================================================
 // services/geminiProxy.js
 //
-// THE CORE — bridges Browser WebSocket ↔ Gemini Live API
-//
-// Browser sends:  { type: "audio", data: "<base64 PCM 16kHz>" }
-//                 { type: "stop" }
-//
-// Server → Gemini:  PCM 16kHz audio (what Gemini wants natively)
-//
-// Gemini → Server → Browser:  { type: "audio", data: "<base64 PCM 24kHz>" }
-//                              { type: "transcript", role, text }
-//                              { type: "interrupted" }
-//                              { type: "turn_complete" }
-//                              { type: "error", message }
-//
-// No audio conversion needed on the server — browser sends PCM 16kHz
-// directly. Browser plays back PCM 24kHz using AudioContext.
+// Bridges Browser WebSocket ↔ Gemini Live API + Handles recording,
+// dynamic configuration (voice & prompt), and post-call Supabase save.
 // ============================================================
 
+const fs = require("fs");
+const path = require("path");
 const { GoogleGenAI } = require("@google/genai");
+const { createClient } = require("@supabase/supabase-js");
+const { getConfig } = require("./config");
 
+// Initialize Gemini Client
 const genai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
   apiVersion: "v1alpha",
 });
 
-const SYSTEM_PROMPT = `You are Arjun, a friendly and polite Chennai customer support agent on a phone call.
+// Initialize Supabase Client
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
+let supabase = null;
+if (supabaseUrl && supabaseKey) {
+  supabase = createClient(supabaseUrl, supabaseKey);
+}
 
-CRITICAL — this is a LIVE VOICE CALL:
-- Keep responses SHORT: 1-2 sentences max
-- Speak like a real person — use natural, polite fillers: "hm", "seri", "okay nga"
-- Speak polite Tanglish: mix Tamil words naturally using respectful endings ("seri nga", "aama nga", "enna problem nu sollunga")
-- NEVER use informal words like "da" or "machi" — sound professional, respectful, and helpful to the customer
-- Sound warm and genuine, NOT robotic
-- React to what you hear — acknowledge before answering
-- If asked if you are AI: "Illa nga, naan Arjun — customer support agent pesuren"
-- NEVER say lists, bullet points, or read headers aloud
-- Speak the way you would talk to a valued customer on a support call`;
+// Map user-friendly voice names to Gemini Live prebuilt voices
+const VOICE_MAP = {
+  Arjun: "Puck",    // Male warm
+  Priya: "Charon",  // Female friendly
+  Dev: "Fenrir",    // Male calm
+  Kavya: "Kore",    // Female formal
+};
 
-// ── Message helpers ───────────────────────────────────────────
+// ── Audio Helpers ─────────────────────────────────────────────
+
+// Downsamples 24kHz Int16 PCM (Gemini output) to 16kHz Int16 PCM
+function resample24To16(buffer24) {
+  const samples24 = new Int16Array(
+    buffer24.buffer,
+    buffer24.byteOffset,
+    buffer24.byteLength / 2
+  );
+  const samples16 = new Int16Array(Math.round(samples24.length * 2 / 3));
+
+  for (let i = 0; i < samples16.length; i++) {
+    const srcIndex = i * 1.5;
+    const indexFloor = Math.floor(srcIndex);
+    const indexCeil = Math.min(samples24.length - 1, indexFloor + 1);
+    const weight = srcIndex - indexFloor;
+    samples16[i] =
+      samples24[indexFloor] * (1 - weight) + samples24[indexCeil] * weight;
+  }
+  return Buffer.from(samples16.buffer, samples16.byteOffset, samples16.byteLength);
+}
+
+// Generates a 44-byte WAV header for raw PCM data
+function getWavHeader(dataLength, sampleRate = 16000, numChannels = 1, bitsPerSample = 16) {
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(dataLength + 36, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // Audio format (1 = PCM)
+  header.writeUInt16LE(numChannels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(sampleRate * numChannels * (bitsPerSample / 8), 28);
+  header.writeUInt16LE(numChannels * (bitsPerSample / 8), 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(dataLength, 40);
+  return header;
+}
+
+// ── Message helper ───────────────────────────────────────────
 function send(ws, obj) {
   if (ws.readyState === 1) {
     ws.send(JSON.stringify(obj));
@@ -49,15 +85,39 @@ function send(ws, obj) {
 async function handleBrowserSession(browserWs) {
   let geminiSession = null;
   let isActive = true;
+  const startTime = Date.now();
 
-  // ── 1. Open Gemini Live session ───────────────────────────
+  // Call metadata & recording assets
+  const callId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const tempDir = path.join(__dirname, "../temp");
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
+  const tempPcmPath = path.join(tempDir, `${callId}.pcm`);
+  const recordStream = fs.createWriteStream(tempPcmPath);
+  const transcriptLines = [];
+
+  // ── 1. Open Gemini Live session with dynamic config ─────────
+  const activeConfig = getConfig();
+  const voiceName = VOICE_MAP[activeConfig.activeVoice] || "Puck";
+
+  // Construct dynamic prompt injecting the slider values
+  const customizedPrompt = `${activeConfig.systemPrompt}
+  
+Additional voice delivery instructions:
+- Emotion intensity: ${activeConfig.emotion}%
+- Speed: ${activeConfig.speed}%
+- Friendliness level: ${activeConfig.friendliness}%`;
+
   try {
-    geminiSession = await openGeminiSession(browserWs);
-    console.log("✅ Gemini Live session open");
-    send(browserWs, { type: "ready" }); // tell browser we're connected
+    geminiSession = await openGeminiSession(browserWs, voiceName, customizedPrompt, recordStream, transcriptLines);
+    console.log(`✅ Gemini Live session open | Call ID: ${callId} | Voice: ${activeConfig.activeVoice} (${voiceName})`);
+    send(browserWs, { type: "ready" });
   } catch (err) {
     console.error("❌ Failed to open Gemini Live session:", err.message);
     send(browserWs, { type: "error", message: "Failed to connect to AI. Check API key." });
+    recordStream.close();
+    try { fs.unlinkSync(tempPcmPath); } catch {}
     browserWs.close();
     return;
   }
@@ -71,12 +131,15 @@ async function handleBrowserSession(browserWs) {
 
       switch (msg.type) {
         case "audio":
-          // Browser sends base64 PCM 16kHz — forward directly to Gemini
+          // 1. Forward raw PCM 16kHz base64 data to Gemini
           await geminiSession.sendAudio(msg.data);
+
+          // 2. Write to the call recording file
+          const audioBuffer = Buffer.from(msg.data, "base64");
+          recordStream.write(audioBuffer);
           break;
 
         case "stop":
-          // User clicked Stop Call
           isActive = false;
           await geminiSession.close();
           break;
@@ -89,9 +152,27 @@ async function handleBrowserSession(browserWs) {
     }
   });
 
-  browserWs.on("close", async () => {
-    console.log("🌐 Browser disconnected");
+  // Helper to trigger post-call upload and database saving
+  async function finalizeCall() {
     isActive = false;
+    recordStream.end();
+
+    const endTime = Date.now();
+    const durationSeconds = Math.round((endTime - startTime) / 1000);
+
+    // Wait for the stream write to finish completely
+    await new Promise((resolve) => recordStream.on("finish", resolve));
+
+    // Upload & database insertion logic (runs asynchronously)
+    processPostCallData(callId, tempPcmPath, durationSeconds, transcriptLines, activeConfig)
+      .catch((err) => console.error("❌ Error processing post-call data:", err.message));
+  }
+
+  browserWs.on("close", async () => {
+    console.log(`🌐 Browser disconnected | Call ID: ${callId}`);
+    if (isActive) {
+      await finalizeCall();
+    }
     if (geminiSession) {
       try { await geminiSession.close(); } catch {}
     }
@@ -104,22 +185,20 @@ async function handleBrowserSession(browserWs) {
 }
 
 // ── Open Gemini Live session ──────────────────────────────────
-async function openGeminiSession(browserWs) {
+async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStream, transcriptLines) {
   const session = await genai.live.connect({
     model: "gemini-2.5-flash-native-audio-latest",
     config: {
-      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      systemInstruction: { parts: [{ text: systemPrompt }] },
       responseModalities: ["AUDIO"],
       speechConfig: {
         voiceConfig: {
-          prebuiltVoiceConfig: { voiceName: "Puck" }, // warm expressive voice
+          prebuiltVoiceConfig: { voiceName },
         },
       },
-      inputAudioTranscription: {},  // get caller speech as text
-      outputAudioTranscription: {}, // get AI response as text
-      realtimeInputConfig: {
-        // Gemini handles VAD and barge-in automatically
-      },
+      inputAudioTranscription: {},
+      outputAudioTranscription: {},
+      realtimeInputConfig: {},
     },
     callbacks: {
       onmessage: (response) => {
@@ -129,12 +208,19 @@ async function openGeminiSession(browserWs) {
         if (response.serverContent?.modelTurn?.parts) {
           for (const part of response.serverContent.modelTurn.parts) {
             if (part.inlineData?.mimeType?.startsWith("audio/")) {
-              // Send raw PCM 24kHz to browser — browser will play it
+              const audioBase64 = part.inlineData.data;
+
+              // Send raw PCM 24kHz to browser
               send(browserWs, {
                 type: "audio",
-                data: part.inlineData.data,         // base64 PCM 24kHz
-                mimeType: part.inlineData.mimeType, // e.g. "audio/pcm;rate=24000"
+                data: audioBase64,
+                mimeType: part.inlineData.mimeType,
               });
+
+              // Resample 24kHz to 16kHz and save to recording file
+              const rawBuffer = Buffer.from(audioBase64, "base64");
+              const resampledBuffer = resample24To16(rawBuffer);
+              recordStream.write(resampledBuffer);
             }
           }
         }
@@ -143,11 +229,13 @@ async function openGeminiSession(browserWs) {
         if (response.serverContent?.inputTranscription?.text) {
           const text = response.serverContent.inputTranscription.text;
           console.log(`👤 Caller: "${text}"`);
+          transcriptLines.push({ role: "user", text });
           send(browserWs, { type: "transcript", role: "user", text });
         }
         if (response.serverContent?.outputTranscription?.text) {
           const text = response.serverContent.outputTranscription.text;
-          console.log(`🤖 Arjun: "${text}"`);
+          console.log(`🤖 Agent: "${text}"`);
+          transcriptLines.push({ role: "ai", text });
           send(browserWs, { type: "transcript", role: "ai", text });
         }
 
@@ -159,7 +247,6 @@ async function openGeminiSession(browserWs) {
 
         // ── Turn complete ────────────────────────────────────
         if (response.serverContent?.turnComplete) {
-          console.log("🔄 Turn complete");
           send(browserWs, { type: "turn_complete" });
         }
       },
@@ -190,6 +277,89 @@ async function openGeminiSession(browserWs) {
       try { await session.close(); } catch {}
     },
   };
+}
+
+// ── Process Post Call Data: Upload & Sentiment ─────────────────
+async function processPostCallData(callId, tempPcmPath, durationSeconds, transcriptLines, activeConfig) {
+  if (!fs.existsSync(tempPcmPath)) return;
+
+  const rawPcm = fs.readFileSync(tempPcmPath);
+  const wavHeader = getWavHeader(rawPcm.length);
+  const wavBuffer = Buffer.concat([wavHeader, rawPcm]);
+
+  // Delete local temp PCM file
+  try { fs.unlinkSync(tempPcmPath); } catch {}
+
+  let recordingUrl = null;
+  let sentiment = "Neutral";
+  const fullTranscript = transcriptLines
+    .map((line) => `${line.role === "user" ? "Caller" : "Agent"}: ${line.text}`)
+    .join("\n");
+
+  // 1. Upload to Supabase Storage
+  if (supabase && wavBuffer.length > 0) {
+    const filename = `${callId}.wav`;
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from("recordings")
+      .upload(filename, wavBuffer, {
+        contentType: "audio/wav",
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.error("❌ Supabase upload error:", uploadError.message);
+    } else {
+      const { data: publicUrlData } = supabase.storage
+        .from("recordings")
+        .getPublicUrl(filename);
+      recordingUrl = publicUrlData?.publicUrl;
+      console.log(`💾 Call recording uploaded to: ${recordingUrl}`);
+    }
+  }
+
+  // 2. Perform Sentiment Analysis using Gemini 2.5 Flash
+  if (transcriptLines.length > 0) {
+    try {
+      const analysisPrompt = `Analyze the sentiment of the following call transcript. Respond with ONLY one of these three words: Positive, Neutral, or Negative. Do not include any other text, explanation, or punctuation.
+      
+Transcript:
+${fullTranscript}`;
+
+      const aiResponse = await genai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: analysisPrompt,
+      });
+
+      const responseText = aiResponse.text?.trim() || "";
+      if (["Positive", "Neutral", "Negative"].includes(responseText)) {
+        sentiment = responseText;
+      }
+      console.log(`📊 Analyzed Sentiment: ${sentiment}`);
+    } catch (err) {
+      console.error("❌ Failed to analyze sentiment:", err.message);
+    }
+  }
+
+  // 3. Save Call Metadata to Supabase DB
+  if (supabase) {
+    const { error: dbError } = await supabase.from("calls").insert({
+      caller_number: `+1 (555) 019-${Math.floor(1000 + Math.random() * 9000)}`, // Random placeholder number
+      agent_name: activeConfig.activeVoice,
+      language: "Tanglish",
+      duration_seconds: durationSeconds,
+      sentiment,
+      transcript: fullTranscript,
+      recording_url: recordingUrl,
+    });
+
+    if (dbError) {
+      console.error("❌ Failed to insert call log into Supabase:", dbError.message);
+    } else {
+      console.log(`✅ Call log saved to Supabase database | Call ID: ${callId}`);
+    }
+  } else {
+    console.log("⚠️ Supabase not configured. Call logs not saved.");
+  }
 }
 
 module.exports = { handleBrowserSession };
