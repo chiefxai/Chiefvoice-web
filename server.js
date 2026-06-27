@@ -68,6 +68,7 @@ app.get("/api/config", (req, res) => {
 
 // Update configuration
 app.post("/api/config", (req, res) => {
+  console.log("⚙️ Updating config:", req.body);
   const updated = updateConfig(req.body);
   res.json(updated);
 });

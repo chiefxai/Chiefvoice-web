@@ -118,6 +118,7 @@ async function handleBrowserSession(browserWs) {
 
   // ── 1. Open Gemini Live session with dynamic config ─────────
   const activeConfig = getConfig();
+  console.log("📞 Incoming call. Active config loaded:", activeConfig);
   const voiceName = VOICE_MAP[activeConfig.activeVoice] || "Puck";
 
   // Construct dynamic prompt injecting the slider values
