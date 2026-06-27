@@ -23,6 +23,7 @@ app.set("trust proxy", 1);
 app.use(cors()); // Enable CORS for decoupled dashboard
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
+app.use("/dashboard", express.static(path.join(__dirname, "dashboard")));
 
 // Supabase client initialization
 const supabaseUrl = process.env.SUPABASE_URL;
