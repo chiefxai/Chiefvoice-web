@@ -47,9 +47,9 @@ if (supabaseUrl && supabaseKey && isValidHttpUrl(supabaseUrl)) {
 // Map user-friendly voice names to Gemini Live prebuilt voices
 const VOICE_MAP = {
   Arjun: "Puck",    // Male warm
-  Priya: "Charon",  // Female friendly
+  Priya: "Aoede",   // Female friendly/breezy
   Dev: "Fenrir",    // Male calm
-  Kavya: "Kore",    // Female formal
+  Kavya: "Kore",    // Female formal/firm
 };
 
 // ── Audio Helpers ─────────────────────────────────────────────
