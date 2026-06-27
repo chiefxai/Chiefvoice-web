@@ -9,7 +9,8 @@ const http = require("http");
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
-const { WebSocketServer } = require("ws");
+const ws = require("ws");
+const { WebSocketServer } = ws;
 const { createClient } = require("@supabase/supabase-js");
 const { handleBrowserSession } = require("./services/geminiProxy");
 const { getConfig, updateConfig } = require("./services/config");
@@ -42,7 +43,10 @@ function isValidHttpUrl(string) {
 
 if (supabaseUrl && supabaseKey && isValidHttpUrl(supabaseUrl)) {
   try {
-    supabase = createClient(supabaseUrl, supabaseKey);
+    supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: { persistSession: false },
+      realtime: { transport: ws }
+    });
     console.log("✅ Supabase client initialized");
   } catch (err) {
     console.error("❌ Failed to initialize Supabase client:", err.message);

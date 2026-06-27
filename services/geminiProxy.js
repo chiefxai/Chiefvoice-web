@@ -7,6 +7,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const ws = require("ws");
 const { GoogleGenAI } = require("@google/genai");
 const { createClient } = require("@supabase/supabase-js");
 const { getConfig } = require("./config");
@@ -34,7 +35,10 @@ function isValidHttpUrl(string) {
 
 if (supabaseUrl && supabaseKey && isValidHttpUrl(supabaseUrl)) {
   try {
-    supabase = createClient(supabaseUrl, supabaseKey);
+    supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: { persistSession: false },
+      realtime: { transport: ws }
+    });
   } catch (err) {
     console.error("❌ Failed to initialize Supabase client in proxy:", err.message);
   }
