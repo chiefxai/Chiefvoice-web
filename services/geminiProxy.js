@@ -207,7 +207,7 @@ Additional voice delivery instructions:
 // ── Open Gemini Live session ──────────────────────────────────
 async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStream, transcriptLines) {
   const session = await genai.live.connect({
-    model: "gemini-3.1-flash-live-preview",
+    model: "gemini-2.5-flash-native-audio-latest",
     config: {
       systemInstruction: { parts: [{ text: systemPrompt }] },
       responseModalities: ["AUDIO"],
@@ -215,6 +215,16 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
         voiceConfig: {
           prebuiltVoiceConfig: {
             voiceName: voiceName,
+          },
+        },
+      },
+      generationConfig: {
+        responseModalities: ["AUDIO"],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: {
+              voiceName: voiceName,
+            },
           },
         },
       },
