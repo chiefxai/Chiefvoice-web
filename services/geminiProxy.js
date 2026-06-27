@@ -20,7 +20,10 @@
 
 const { GoogleGenAI } = require("@google/genai");
 
-const genai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const genai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  apiVersion: "v1alpha",
+});
 
 const SYSTEM_PROMPT = `You are Arjun, a friendly Chennai customer support agent on a phone call.
 
