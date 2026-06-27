@@ -40,9 +40,33 @@ app.get("/list-models", async (req, res) => {
     if (!apiKey) {
       return res.status(500).json({ error: "GEMINI_API_KEY is not configured" });
     }
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-    const data = await response.json();
-    res.json(data);
+    
+    let allModels = [];
+    let pageToken = "";
+    
+    do {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}${pageToken ? `&pageToken=${pageToken}` : ""}`;
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.models) {
+        allModels.push(...data.models);
+      }
+      pageToken = data.nextPageToken || "";
+    } while (pageToken);
+    
+    const liveModels = allModels.filter(m => 
+      m.supportedGenerationMethods && m.supportedGenerationMethods.includes("bidiGenerateContent")
+    );
+    
+    res.json({
+      totalModelsFound: allModels.length,
+      liveModels: liveModels.map(m => ({
+        name: m.name,
+        displayName: m.displayName,
+        supportedGenerationMethods: m.supportedGenerationMethods
+      })),
+      allModelNames: allModels.map(m => m.name)
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
