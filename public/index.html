@@ -396,6 +396,40 @@ const safariNotice  = document.getElementById("safariNotice");
 const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 if (isSafari) safariNotice.style.display = "block";
 
+// ── Dynamic Agent State ───────────────────────────────────────
+let currentAgentName = "Arjun";
+let currentAgentAvatar = "👨🏽‍💼";
+
+async function loadAgentConfig() {
+  try {
+    const response = await fetch("/api/config");
+    const config = await response.json();
+    currentAgentName = config.activeVoice || "Arjun";
+    
+    const AVATARS = {
+      Arjun: "👨🏽‍💼",
+      Priya: "👩🏽‍💼",
+      Dev: "👨🏻‍💻",
+      Kavya: "👩🏻‍💼"
+    };
+    currentAgentAvatar = AVATARS[currentAgentName] || "🧑‍💼";
+    
+    // Update UI elements
+    const nameEl = document.querySelector(".agent-name");
+    const avatarEl = document.querySelector(".avatar");
+    if (nameEl) nameEl.textContent = currentAgentName;
+    if (avatarEl) avatarEl.textContent = currentAgentAvatar;
+    if (tEmpty && tEmpty.style.display !== "none") {
+      tEmpty.innerHTML = `Tap call to start<br>talking to ${currentAgentName}`;
+    }
+  } catch (err) {
+    console.error("Failed to load agent configuration:", err);
+  }
+}
+
+// Load config immediately on page script run
+loadAgentConfig();
+
 // ── Helpers ───────────────────────────────────────────────────
 function setStatus(cls, text) {
   statusDot.className = "dot " + cls;
@@ -405,7 +439,7 @@ function setStatus(cls, text) {
 function setSpeaking(on) {
   if (on) {
     avatarWrap.classList.add("speaking");
-    setStatus("speaking", "Arjun is speaking…");
+    setStatus("speaking", currentAgentName + " is speaking…");
   } else {
     avatarWrap.classList.remove("speaking");
     if (isCallActive) setStatus("active", "Listening…");
@@ -416,7 +450,7 @@ function addLine(role, text) {
   if (tEmpty) tEmpty.style.display = "none";
   const div = document.createElement("div");
   div.className = "t-line " + role;
-  div.innerHTML = `<span class="t-who">${role === "user" ? "You" : "Arjun"}</span>
+  div.innerHTML = `<span class="t-who">${role === "user" ? "You" : currentAgentName}</span>
                    <span class="t-text">${text.replace(/</g,"&lt;")}</span>`;
   transcriptBox.appendChild(div);
   transcriptBox.scrollTop = transcriptBox.scrollHeight;
@@ -432,6 +466,9 @@ async function startCall() {
   callBtn.disabled = true;
   setStatus("active", "Connecting…");
   safariNotice.style.display = "none";
+  
+  // Reload the agent config right before starting the call
+  await loadAgentConfig();
 
   // ── 1. Mic permission ──────────────────────────────────────
   // Must be called from inside user gesture (this function IS the handler)
