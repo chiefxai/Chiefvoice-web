@@ -166,8 +166,8 @@ async function openGeminiSession(browserWs) {
         send(browserWs, { type: "error", message: msg });
       },
 
-      onclose: () => {
-        console.log("🔌 Gemini Live session closed");
+      onclose: (e) => {
+        console.log(`🔌 Gemini Live session closed. Code: ${e?.code || 'N/A'}, Reason: ${e?.reason || 'No reason provided'}`);
         send(browserWs, { type: "ended" });
       },
     },
