@@ -102,7 +102,7 @@ async function handleBrowserSession(browserWs) {
 // ── Open Gemini Live session ──────────────────────────────────
 async function openGeminiSession(browserWs) {
   const session = await genai.live.connect({
-    model: "gemini-2.0-flash-live-001",
+    model: "gemini-2.0-flash-exp",
     config: {
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
       responseModalities: ["AUDIO"],
