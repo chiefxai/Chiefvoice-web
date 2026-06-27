@@ -713,14 +713,11 @@ function scheduleAudio(base64Data, mimeType) {
     float32[i] = int16[i] / (int16[i] < 0 ? 0x8000 : 0x7FFF);
   }
 
-  // If playCtx sample rate doesn't match, resample
-  let samples = float32;
-  if (playCtx.sampleRate !== sampleRate) {
-    samples = resampleFloat32(float32, sampleRate, playCtx.sampleRate);
-  }
-
-  const buffer = playCtx.createBuffer(1, samples.length, playCtx.sampleRate);
-  buffer.copyToChannel(samples, 0);
+  // Create the AudioBuffer at the native incoming sample rate (usually 24000Hz).
+  // The browser's audio engine will natively and smoothly resample this buffer
+  // to the device's hardware sample rate, avoiding any robotic/metallic artifacts.
+  const buffer = playCtx.createBuffer(1, float32.length, sampleRate);
+  buffer.copyToChannel(float32, 0);
 
   const src = playCtx.createBufferSource();
   src.buffer = buffer;
