@@ -252,10 +252,11 @@ voiceCards.forEach(card => {
     voiceCards.forEach(c => c.classList.remove("active"));
     card.classList.add("active");
     activeVoice = card.getAttribute("data-voice");
+    saveConfig(); // Automatically save voice selection
   });
 });
 
-// Slider value update triggers
+// Slider value update triggers (visual feedback)
 sliderEmotion.addEventListener("input", () => {
   emotionVal.textContent = `${sliderEmotion.value}%`;
 });
@@ -266,11 +267,17 @@ sliderFriendliness.addEventListener("input", () => {
   friendlinessVal.textContent = `${sliderFriendliness.value}%`;
 });
 
+// Save sliders automatically when user releases them (on 'change')
+sliderEmotion.addEventListener("change", saveConfig);
+sliderSpeed.addEventListener("change", saveConfig);
+sliderFriendliness.addEventListener("change", saveConfig);
+
 // Preset selection updates
 presetSelector.addEventListener("change", () => {
   const preset = presetSelector.value;
   if (PROMPT_PRESETS[preset]) {
     systemPromptEditor.value = PROMPT_PRESETS[preset];
+    saveConfig(); // Automatically save prompt preset when switched
   }
 });
 
