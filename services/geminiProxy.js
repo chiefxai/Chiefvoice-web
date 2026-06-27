@@ -212,6 +212,11 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
       systemInstruction: { parts: [{ text: systemPrompt }] },
       responseModalities: ["AUDIO"],
       speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: {
+            voiceName: voiceName,
+          },
+        },
         voice_config: {
           prebuilt_voice_config: {
             voice_name: voiceName,
