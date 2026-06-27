@@ -176,7 +176,7 @@ async function openGeminiSession(browserWs) {
   return {
     sendAudio: async (base64Pcm16k) => {
       await session.sendRealtimeInput({
-        audio: {
+        media: {
           data: base64Pcm16k,
           mimeType: "audio/pcm;rate=16000",
         },
