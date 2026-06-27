@@ -21,8 +21,23 @@ const genai = new GoogleGenAI({
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 let supabase = null;
-if (supabaseUrl && supabaseKey) {
-  supabase = createClient(supabaseUrl, supabaseKey);
+
+function isValidHttpUrl(string) {
+  let url;
+  try {
+    url = new URL(string);
+  } catch (_) {
+    return false;  
+  }
+  return url.protocol === "http:" || url.protocol === "https:";
+}
+
+if (supabaseUrl && supabaseKey && isValidHttpUrl(supabaseUrl)) {
+  try {
+    supabase = createClient(supabaseUrl, supabaseKey);
+  } catch (err) {
+    console.error("❌ Failed to initialize Supabase client in proxy:", err.message);
+  }
 }
 
 // Map user-friendly voice names to Gemini Live prebuilt voices

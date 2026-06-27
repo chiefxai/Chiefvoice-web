@@ -28,11 +28,26 @@ app.use(express.static(path.join(__dirname, "public")));
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 let supabase = null;
-if (supabaseUrl && supabaseKey) {
-  supabase = createClient(supabaseUrl, supabaseKey);
-  console.log("✅ Supabase client initialized");
+
+function isValidHttpUrl(string) {
+  let url;
+  try {
+    url = new URL(string);
+  } catch (_) {
+    return false;  
+  }
+  return url.protocol === "http:" || url.protocol === "https:";
+}
+
+if (supabaseUrl && supabaseKey && isValidHttpUrl(supabaseUrl)) {
+  try {
+    supabase = createClient(supabaseUrl, supabaseKey);
+    console.log("✅ Supabase client initialized");
+  } catch (err) {
+    console.error("❌ Failed to initialize Supabase client:", err.message);
+  }
 } else {
-  console.log("⚠️ Supabase credentials missing — database features disabled");
+  console.log("⚠️ Supabase credentials missing or invalid — database features disabled");
 }
 
 // Track active sessions in real-time
