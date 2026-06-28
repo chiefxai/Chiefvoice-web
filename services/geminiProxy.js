@@ -234,7 +234,36 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
           }
         }
       },
+      inputAudioTranscription:  {},
+      outputAudioTranscription: {},
 
+      // ── VAD (Voice Activity Detection) ────────────────────
+      // This is the #1 cause of robotic feel when misconfigured.
+      // Without this, Gemini uses aggressive defaults:
+      //   - cuts off caller mid-sentence (bad turn-taking)
+      //   - responds too fast (no thinking pause = sounds scripted)
+      //   - doesn't wait for natural sentence-end pauses
+      realtimeInputConfig: {
+        automaticActivityDetection: {
+          disabled: false,
+          // How long of silence = caller finished speaking
+          // 800ms feels natural; lower = AI interrupts you; higher = awkward lag
+          endOfSpeechSensitivity: "END_SENSITIVITY_LOW",
+          // How long before VAD activates (filters room noise)
+          startOfSpeechSensitivity: "START_SENSITIVITY_LOW",
+        },
+        // Barge-in: let caller interrupt AI mid-sentence
+        // This is what makes it feel like a REAL conversation
+        turnCoverage: "TURN_INCLUDES_ALL_INPUT",
+      },
+
+      // ── Context window compression ────────────────────────
+      // Keeps conversation coherent over long calls without
+      // hitting token limits (prevents quality degradation mid-call)
+      contextWindowCompression: {
+        triggerTokens: 25600,
+        slidingWindow: { targetTokens: 12800 },
+      },
     },
 
     callbacks: {
