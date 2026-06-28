@@ -189,6 +189,36 @@ async function handleBrowserSession(browserWs) {
 // ═══════════════════════════════════════════════════════════════
 async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStream, transcriptLines) {
 
+  // ── Intercept WebSocket Send to Inject VAD Config ──────────
+  // The @google/genai SDK ignores and strips realtimeInputConfig/VAD keys
+  // from config, so we intercept the first setup payload sent over ws
+  // and inject them in the expected snake_case format directly.
+  const originalSend = ws.prototype.send;
+  ws.prototype.send = function (data, options, callback) {
+    try {
+      const payload = JSON.parse(data);
+      if (payload.setup) {
+        payload.setup.realtime_input_config = {
+          automatic_activity_detection: {
+            disabled: false,
+            end_of_speech_sensitivity: "END_SENSITIVITY_LOW",
+            start_of_speech_sensitivity: "START_SENSITIVITY_LOW"
+          },
+          turn_coverage: "TURN_INCLUDES_ALL_INPUT"
+        };
+        payload.setup.context_window_compression = {
+          trigger_tokens: 25600,
+          sliding_window: { target_tokens: 12800 }
+        };
+        data = JSON.stringify(payload);
+        console.log("⚙️ Injected VAD (realtime_input_config) and context window compression into Gemini setup payload.");
+      }
+    } catch (_) {}
+    // Restore original send immediately
+    ws.prototype.send = originalSend;
+    return originalSend.call(this, data, options, callback);
+  };
+
   const session = await genai.live.connect({
     model: "gemini-2.5-flash-native-audio-latest",
 
