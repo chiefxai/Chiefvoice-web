@@ -198,18 +198,10 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
     try {
       const payload = JSON.parse(data);
       if (payload.setup) {
-        payload.setup.realtime_input_config = {
-          automatic_activity_detection: {
-            disabled: false,
-            end_of_speech_sensitivity: "END_SENSITIVITY_LOW",
-            start_of_speech_sensitivity: "START_SENSITIVITY_LOW"
-          },
-          turn_coverage: "TURN_INCLUDES_ALL_INPUT"
-        };
-        payload.setup.context_window_compression = {
-          trigger_tokens: 25600,
-          sliding_window: { target_tokens: 12800 }
-        };
+        // Delete VAD and compression configurations to prevent Google's backend from throwing "Request contains an invalid argument"
+        delete payload.setup.realtime_input_config;
+        delete payload.setup.context_window_compression;
+
         // Inject temperature and nested speech_config to ensure emotional richness and clear voice configuration
         payload.setup.generation_config = {
           response_modalities: ["AUDIO"],
@@ -223,7 +215,7 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
           }
         };
         data = JSON.stringify(payload);
-        console.log("⚙️ Injected VAD (realtime_input_config) and context window compression into Gemini setup payload.");
+        console.log("⚙️ Intercepted setup payload, safely removed VAD/Compression, and injected temperature: 0.9.");
       }
     } catch (_) {}
     // Restore original send immediately
