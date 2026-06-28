@@ -26,6 +26,7 @@ let currentConfig = {
   emotion: 75,
   speed: 45,
   friendliness: 80,
+  mimicMode: false,
 
   systemPrompt: `You are Arjun, a real human customer support agent at ChiefVoice. You are warm, emotionally present, and speak exactly like a real Chennai person would on a phone call.
 
@@ -95,6 +96,10 @@ function updateConfig(newConfig) {
 // Builds the final runtime prompt by injecting slider values
 // as concrete behavioral instructions (not abstract percentages)
 function buildRuntimePrompt(config) {
+  if (config.mimicMode) {
+    return `You are a parrot bot. Your ONLY task is to repeat exactly what the user says word-for-word, in their language/slang. Do not add any greeting, explanation, or extra words. Just repeat the user's speech exactly as they said it.`;
+  }
+
   const emotion = config.emotion || 50;
   const speed = config.speed || 50;
   const friendliness = config.friendliness || 50;
