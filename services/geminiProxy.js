@@ -226,14 +226,20 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
       systemInstruction: {
         parts: [{ text: systemPrompt }]
       },
-      generationConfig: {
-        responseModalities: ["AUDIO"],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName }
-          }
+
+      // ── Response format: AUDIO only ──────────────────────
+      responseModalities: ["AUDIO"],
+
+      // ── Voice selection ───────────────────────────────────
+      // ONE speechConfig here — duplicating it inside generationConfig
+      // causes a config conflict that degrades voice quality to robotic.
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: { voiceName }
         }
       },
+
+      // ── Transcription — both sides ────────────────────────
       inputAudioTranscription:  {},
       outputAudioTranscription: {},
 
@@ -325,7 +331,6 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
   });
 
   return {
-    // Use `media` for sending audio input via the @google/genai SDK
     sendAudio: async (base64Pcm16k) => {
       await session.sendRealtimeInput({
         media: {
