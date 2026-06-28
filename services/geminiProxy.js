@@ -300,10 +300,10 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
   });
 
   return {
-    // FIX: use `audio` not `media` — this was the SDK format bug
+    // Use `media` for sending audio input via the @google/genai SDK
     sendAudio: async (base64Pcm16k) => {
       await session.sendRealtimeInput({
-        audio: {
+        media: {
           data: base64Pcm16k,
           mimeType: "audio/pcm;rate=16000",
         },
