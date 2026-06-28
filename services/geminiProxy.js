@@ -86,7 +86,10 @@ function getWavHeader(dataLength, sampleRate = 16000, channels = 1, bitsPerSampl
 
 // Downsample 24kHz → 16kHz (for recording file consistency)
 function resample24To16(buffer24) {
-  const s24 = new Int16Array(buffer24.buffer, buffer24.byteOffset, buffer24.byteLength / 2);
+  // Copy to a new Uint8Array to guarantee 2-byte alignment of the underlying ArrayBuffer
+  const aligned = new Uint8Array(buffer24.length);
+  aligned.set(buffer24);
+  const s24 = new Int16Array(aligned.buffer, aligned.byteOffset, aligned.byteLength / 2);
   const s16 = new Int16Array(Math.round(s24.length * 2 / 3));
   for (let i = 0; i < s16.length; i++) {
     const pos = i * 1.5;
