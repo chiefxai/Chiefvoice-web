@@ -109,12 +109,6 @@ async function loadConfig() {
 
     // Update Prompt
     systemPromptEditor.value = config.systemPrompt;
-
-    // Update Mimic Mode checkbox
-    const toggleMimic = document.getElementById("toggle-mimic");
-    if (toggleMimic) {
-      toggleMimic.checked = !!config.mimicMode;
-    }
   } catch (err) {
     console.error("Failed to load backend config:", err.message);
   }
@@ -124,14 +118,12 @@ async function loadConfig() {
 async function saveConfig() {
   if (!currentConfig) return;
   
-  const toggleMimic = document.getElementById("toggle-mimic");
   const payload = {
     activeVoice,
     emotion: parseInt(sliderEmotion.value),
     speed: parseInt(sliderSpeed.value),
     friendliness: parseInt(sliderFriendliness.value),
-    systemPrompt: systemPromptEditor.value,
-    mimicMode: toggleMimic ? toggleMimic.checked : false
+    systemPrompt: systemPromptEditor.value
   };
 
   try {
@@ -287,11 +279,7 @@ sliderEmotion.addEventListener("change", saveConfig);
 sliderSpeed.addEventListener("change", saveConfig);
 sliderFriendliness.addEventListener("change", saveConfig);
 
-// Save mimic mode toggle automatically
-const toggleMimic = document.getElementById("toggle-mimic");
-if (toggleMimic) {
-  toggleMimic.addEventListener("change", saveConfig);
-}
+
 
 // Preset selection updates
 presetSelector.addEventListener("change", () => {
