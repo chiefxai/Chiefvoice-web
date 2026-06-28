@@ -146,6 +146,8 @@ async function handleBrowserSession(browserWs) {
     return;
   }
 
+  let isFinalized = false;
+
   // ── Handle browser messages ───────────────────────────────
   browserWs.on("message", async (rawMsg) => {
     if (!isActive || !geminiSession) return;
@@ -155,8 +157,8 @@ async function handleBrowserSession(browserWs) {
         await geminiSession.sendAudio(msg.data);
         recordStream.write(Buffer.from(msg.data, "base64"));
       } else if (msg.type === "stop") {
-        isActive = false;
-        await geminiSession.close();
+        await finalizeCall();
+        if (geminiSession) try { await geminiSession.close(); } catch {}
       }
     } catch (err) {
       console.error("❌ Message error:", err.message);
@@ -164,6 +166,8 @@ async function handleBrowserSession(browserWs) {
   });
 
   async function finalizeCall() {
+    if (isFinalized) return;
+    isFinalized = true;
     isActive = false;
     recordStream.end();
     const duration = Math.round((Date.now() - startTime) / 1000);
@@ -174,7 +178,7 @@ async function handleBrowserSession(browserWs) {
 
   browserWs.on("close", async () => {
     console.log(`🌐 Disconnected | Call ID: ${callId}`);
-    if (isActive) await finalizeCall();
+    await finalizeCall();
     if (geminiSession) try { await geminiSession.close(); } catch {}
   });
 
