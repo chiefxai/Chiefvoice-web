@@ -210,6 +210,18 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
           trigger_tokens: 25600,
           sliding_window: { target_tokens: 12800 }
         };
+        // Inject temperature and nested speech_config to ensure emotional richness and clear voice configuration
+        payload.setup.generation_config = {
+          response_modalities: ["AUDIO"],
+          temperature: 0.9,
+          speech_config: {
+            voice_config: {
+              prebuilt_voice_config: {
+                voice_name: voiceName
+              }
+            }
+          }
+        };
         data = JSON.stringify(payload);
         console.log("⚙️ Injected VAD (realtime_input_config) and context window compression into Gemini setup payload.");
       }
