@@ -32,36 +32,4 @@ function updateConfig(newConfig) {
   return currentConfig;
 }
 
-function buildRuntimePrompt(config) {
-  let prompt = config.systemPrompt || "";
-  
-  // Speed mapping
-  let speedText = "normal conversational pace";
-  if (config.speed < 30) speedText = "a very slow, calm, and deliberate pace";
-  else if (config.speed < 45) speedText = "a slightly slow and relaxed pace";
-  else if (config.speed > 80) speedText = "a very fast, energetic, and rapid pace";
-  else if (config.speed > 55) speedText = "a quick, lively, and energetic pace";
-
-  // Emotion mapping
-  let emotionText = "neutral, balanced, and professional tone";
-  if (config.emotion < 30) emotionText = "extremely calm, level-headed, and low-emotion tone";
-  else if (config.emotion < 45) emotionText = "moderately calm and balanced tone";
-  else if (config.emotion > 80) emotionText = "highly expressive, enthusiastic, and emotionally engaged tone, showing real excitement or warmth";
-  else if (config.emotion > 55) emotionText = "warm, expressive, and friendly tone";
-
-  // Friendliness mapping
-  let friendlinessText = "polite and helpful attitude";
-  if (config.friendliness < 30) friendlinessText = "formal, brief, and highly direct attitude";
-  else if (config.friendliness < 45) friendlinessText = "straightforward and business-like attitude";
-  else if (config.friendliness > 80) friendlinessText = "extremely warm, friendly, welcoming, and deeply empathetic attitude";
-  else if (config.friendliness > 55) friendlinessText = "very friendly, approachable, and warm attitude";
-
-  prompt += `\n\nAdditional speech delivery instructions (CRITICAL):
-- Speak at ${speedText}.
-- Maintain a ${emotionText}.
-- Interact with a ${friendlinessText}.`;
-
-  return prompt;
-}
-
-module.exports = { getConfig, updateConfig, buildRuntimePrompt };
+module.exports = { getConfig, updateConfig };

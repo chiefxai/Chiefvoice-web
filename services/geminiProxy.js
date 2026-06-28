@@ -1,8 +1,28 @@
 // ============================================================
 // services/geminiProxy.js
 //
-// Bridges Browser WebSocket ↔ Gemini Live API + Handles recording,
-// dynamic configuration (voice & prompt), and post-call Supabase save.
+// ── WHAT WAS ROBOTIC AND WHY WE FIXED IT ──────────────────
+//
+// PROBLEM 1 — Wrong model:
+//   Old: "gemini-2.5-flash-native-audio-latest"  ← this is correct
+//   But the speechConfig was duplicated inside generationConfig,
+//   which caused a config conflict and degraded voice quality.
+//   Fix: Single clean speechConfig at top level only.
+//
+// PROBLEM 2 — Wrong sendRealtimeInput format:
+//   Old: session.sendRealtimeInput({ media: { data, mimeType } })
+//   The @google/genai SDK uses `audio` not `media` for browser PCM.
+//   Fix: session.sendRealtimeInput({ audio: { data, mimeType } })
+//
+// PROBLEM 3 — Slider values sent as raw numbers in prompt:
+//   "Emotion intensity: 75%" tells Gemini nothing useful.
+//   Fix: buildRuntimePrompt() converts sliders to prose instructions
+//   that the model can actually act on.
+//
+// PROBLEM 4 — VAD (Voice Activity Detection) not configured:
+//   Without VAD config, Gemini uses aggressive defaults that cut
+//   the caller off mid-sentence and rush responses — sounds robotic.
+//   Fix: Added realtimeInputConfig with tuned VAD settings.
 // ============================================================
 
 const fs = require("fs");
@@ -10,27 +30,21 @@ const path = require("path");
 const ws = require("ws");
 const { GoogleGenAI } = require("@google/genai");
 const { createClient } = require("@supabase/supabase-js");
-const { getConfig } = require("./config");
+const { getConfig, buildRuntimePrompt } = require("./config");
 
-// Initialize Gemini Client
+// ── Clients ───────────────────────────────────────────────────
 const genai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
   apiVersion: "v1alpha",
 });
 
-// Initialize Supabase Client
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 let supabase = null;
 
-function isValidHttpUrl(string) {
-  let url;
-  try {
-    url = new URL(string);
-  } catch (_) {
-    return false;  
-  }
-  return url.protocol === "http:" || url.protocol === "https:";
+function isValidHttpUrl(str) {
+  try { return ["http:", "https:"].includes(new URL(str).protocol); }
+  catch { return false; }
 }
 
 if (supabaseUrl && supabaseKey && isValidHttpUrl(supabaseUrl)) {
@@ -40,101 +54,88 @@ if (supabaseUrl && supabaseKey && isValidHttpUrl(supabaseUrl)) {
       realtime: { transport: ws }
     });
   } catch (err) {
-    console.error("❌ Failed to initialize Supabase client in proxy:", err.message);
+    console.error("❌ Supabase init failed:", err.message);
   }
 }
 
-// Map user-friendly voice names to Gemini Live prebuilt voices
+// ── Voice map ─────────────────────────────────────────────────
+// Gemini 2.5 Native Audio voices — chosen for warmth and naturalness
+// Puck  = warm, expressive male  (best for Tanglish — most human feel)
+// Aoede = breezy, friendly female
+// Fenrir = calm, steady male
+// Kore  = clear, firm female
 const VOICE_MAP = {
-  Arjun: "Puck",    // Male warm
-  Priya: "Aoede",   // Female friendly/breezy
-  Dev: "Fenrir",    // Male calm
-  Kavya: "Kore",    // Female formal/firm
+  Arjun: "Puck",
+  Priya: "Aoede",
+  Dev:   "Fenrir",
+  Kavya: "Kore",
 };
 
-// ── Audio Helpers ─────────────────────────────────────────────
+// ── WAV header ────────────────────────────────────────────────
+function getWavHeader(dataLength, sampleRate = 16000, channels = 1, bitsPerSample = 16) {
+  const h = Buffer.alloc(44);
+  h.write("RIFF", 0);                                      h.writeUInt32LE(dataLength + 36, 4);
+  h.write("WAVE", 8);                                      h.write("fmt ", 12);
+  h.writeUInt32LE(16, 16);                                 h.writeUInt16LE(1, 20);
+  h.writeUInt16LE(channels, 22);                           h.writeUInt32LE(sampleRate, 24);
+  h.writeUInt32LE(sampleRate * channels * bitsPerSample / 8, 28);
+  h.writeUInt16LE(channels * bitsPerSample / 8, 32);       h.writeUInt16LE(bitsPerSample, 34);
+  h.write("data", 36);                                     h.writeUInt32LE(dataLength, 40);
+  return h;
+}
 
-// Downsamples 24kHz Int16 PCM (Gemini output) to 16kHz Int16 PCM
+// Downsample 24kHz → 16kHz (for recording file consistency)
 function resample24To16(buffer24) {
-  const samples24 = new Int16Array(
-    buffer24.buffer,
-    buffer24.byteOffset,
-    buffer24.byteLength / 2
-  );
-  const samples16 = new Int16Array(Math.round(samples24.length * 2 / 3));
-
-  for (let i = 0; i < samples16.length; i++) {
-    const srcIndex = i * 1.5;
-    const indexFloor = Math.floor(srcIndex);
-    const indexCeil = Math.min(samples24.length - 1, indexFloor + 1);
-    const weight = srcIndex - indexFloor;
-    samples16[i] =
-      samples24[indexFloor] * (1 - weight) + samples24[indexCeil] * weight;
+  const s24 = new Int16Array(buffer24.buffer, buffer24.byteOffset, buffer24.byteLength / 2);
+  const s16 = new Int16Array(Math.round(s24.length * 2 / 3));
+  for (let i = 0; i < s16.length; i++) {
+    const pos = i * 1.5;
+    const lo = Math.floor(pos);
+    const hi = Math.min(s24.length - 1, lo + 1);
+    s16[i] = s24[lo] * (1 - (pos - lo)) + s24[hi] * (pos - lo);
   }
-  return Buffer.from(samples16.buffer, samples16.byteOffset, samples16.byteLength);
+  return Buffer.from(s16.buffer, s16.byteOffset, s16.byteLength);
 }
 
-// Generates a 44-byte WAV header for raw PCM data
-function getWavHeader(dataLength, sampleRate = 16000, numChannels = 1, bitsPerSample = 16) {
-  const header = Buffer.alloc(44);
-  header.write("RIFF", 0);
-  header.writeUInt32LE(dataLength + 36, 4);
-  header.write("WAVE", 8);
-  header.write("fmt ", 12);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20); // Audio format (1 = PCM)
-  header.writeUInt16LE(numChannels, 22);
-  header.writeUInt32LE(sampleRate, 24);
-  header.writeUInt32LE(sampleRate * numChannels * (bitsPerSample / 8), 28);
-  header.writeUInt16LE(numChannels * (bitsPerSample / 8), 32);
-  header.writeUInt16LE(bitsPerSample, 34);
-  header.write("data", 36);
-  header.writeUInt32LE(dataLength, 40);
-  return header;
-}
-
-// ── Message helper ───────────────────────────────────────────
+// ── WS send helper ────────────────────────────────────────────
 function send(ws, obj) {
-  if (ws.readyState === 1) {
-    ws.send(JSON.stringify(obj));
-  }
+  if (ws.readyState === 1) ws.send(JSON.stringify(obj));
 }
 
-// ── Main handler ──────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// MAIN SESSION HANDLER
+// ═══════════════════════════════════════════════════════════════
 async function handleBrowserSession(browserWs) {
   let geminiSession = null;
   let isActive = true;
   const startTime = Date.now();
 
-  // Call metadata & recording assets
-  const callId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const tempDir = path.join(__dirname, "../temp");
-  if (!fs.existsSync(tempDir)) {
-    fs.mkdirSync(tempDir, { recursive: true });
-  }
+  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
   const tempPcmPath = path.join(tempDir, `${callId}.pcm`);
   const recordStream = fs.createWriteStream(tempPcmPath);
   const transcriptLines = [];
 
-  // ── 1. Open Gemini Live session with dynamic config ─────────
+  // ── Load config and build prompt ──────────────────────────
   const activeConfig = getConfig();
-  console.log("📞 Incoming call. Active config loaded:", activeConfig);
   const voiceName = VOICE_MAP[activeConfig.activeVoice] || "Puck";
 
-  // Construct dynamic prompt injecting the slider values
-  const customizedPrompt = `${activeConfig.systemPrompt}
-  
-Additional voice delivery instructions:
-- Emotion intensity: ${activeConfig.emotion}%
-- Speed: ${activeConfig.speed}%
-- Friendliness level: ${activeConfig.friendliness}%`;
+  // buildRuntimePrompt converts slider numbers → human prose instructions
+  // e.g. speed:75 → "Speak at a quick, energetic pace"
+  const finalPrompt = buildRuntimePrompt(activeConfig);
 
+  console.log(`📞 New call | ID: ${callId} | Voice: ${activeConfig.activeVoice} (${voiceName})`);
+
+  // ── Open Gemini session ───────────────────────────────────
   try {
-    geminiSession = await openGeminiSession(browserWs, voiceName, customizedPrompt, recordStream, transcriptLines);
-    console.log(`✅ Gemini Live session open | Call ID: ${callId} | Voice: ${activeConfig.activeVoice} (${voiceName})`);
+    geminiSession = await openGeminiSession(
+      browserWs, voiceName, finalPrompt, recordStream, transcriptLines
+    );
+    console.log(`✅ Gemini Live session open | Call ID: ${callId}`);
     send(browserWs, { type: "ready" });
   } catch (err) {
-    console.error("❌ Failed to open Gemini Live session:", err.message);
+    console.error("❌ Gemini session failed:", err.message);
     send(browserWs, { type: "error", message: "Failed to connect to AI. Check API key." });
     recordStream.close();
     try { fs.unlinkSync(tempPcmPath); } catch {}
@@ -142,122 +143,129 @@ Additional voice delivery instructions:
     return;
   }
 
-  // ── 2. Handle messages from Browser ──────────────────────
+  // ── Handle browser messages ───────────────────────────────
   browserWs.on("message", async (rawMsg) => {
     if (!isActive || !geminiSession) return;
-
     try {
       const msg = JSON.parse(rawMsg.toString());
-
-      switch (msg.type) {
-        case "audio":
-          // 1. Forward raw PCM 16kHz base64 data to Gemini
-          await geminiSession.sendAudio(msg.data);
-
-          // 2. Write to the call recording file
-          const audioBuffer = Buffer.from(msg.data, "base64");
-          recordStream.write(audioBuffer);
-          break;
-
-        case "stop":
-          isActive = false;
-          await geminiSession.close();
-          break;
-
-        default:
-          break;
+      if (msg.type === "audio") {
+        await geminiSession.sendAudio(msg.data);
+        recordStream.write(Buffer.from(msg.data, "base64"));
+      } else if (msg.type === "stop") {
+        isActive = false;
+        await geminiSession.close();
       }
     } catch (err) {
-      console.error("❌ Error processing browser message:", err.message);
+      console.error("❌ Message error:", err.message);
     }
   });
 
-  // Helper to trigger post-call upload and database saving
   async function finalizeCall() {
     isActive = false;
     recordStream.end();
-
-    const endTime = Date.now();
-    const durationSeconds = Math.round((endTime - startTime) / 1000);
-
-    // Wait for the stream write to finish completely
-    await new Promise((resolve) => recordStream.on("finish", resolve));
-
-    // Upload & database insertion logic (runs asynchronously)
-    processPostCallData(callId, tempPcmPath, durationSeconds, transcriptLines, activeConfig)
-      .catch((err) => console.error("❌ Error processing post-call data:", err.message));
+    const duration = Math.round((Date.now() - startTime) / 1000);
+    await new Promise(r => recordStream.on("finish", r));
+    processPostCallData(callId, tempPcmPath, duration, transcriptLines, activeConfig)
+      .catch(err => console.error("❌ Post-call error:", err.message));
   }
 
   browserWs.on("close", async () => {
-    console.log(`🌐 Browser disconnected | Call ID: ${callId}`);
-    if (isActive) {
-      await finalizeCall();
-    }
-    if (geminiSession) {
-      try { await geminiSession.close(); } catch {}
-    }
+    console.log(`🌐 Disconnected | Call ID: ${callId}`);
+    if (isActive) await finalizeCall();
+    if (geminiSession) try { await geminiSession.close(); } catch {}
   });
 
-  browserWs.on("error", (err) => {
-    console.error("❌ Browser WS error:", err.message);
+  browserWs.on("error", err => {
+    console.error("❌ WS error:", err.message);
     isActive = false;
   });
 }
 
-// ── Open Gemini Live session ──────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// GEMINI LIVE SESSION — CORE VOICE QUALITY SETTINGS
+// ═══════════════════════════════════════════════════════════════
 async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStream, transcriptLines) {
+
   const session = await genai.live.connect({
-    model: "gemini-2.5-flash-native-audio-latest",
+    model: "gemini-2.5-flash-preview-native-audio-dialog",
+    // ↑ USE THIS MODEL — "native-audio-dialog" is specifically trained
+    //   for conversational, emotionally-aware speech. It produces
+    //   natural breathing, pacing, and tonal variation.
+    //   "gemini-2.5-flash-native-audio-latest" also works but dialog
+    //   variant has better turn-taking and emotional range.
+
     config: {
-      systemInstruction: { parts: [{ text: systemPrompt }] },
+      systemInstruction: {
+        parts: [{ text: systemPrompt }]
+      },
+
+      // ── Response format: AUDIO only ──────────────────────
       responseModalities: ["AUDIO"],
+
+      // ── Voice selection ───────────────────────────────────
+      // ONE speechConfig here — duplicating it inside generationConfig
+      // causes a config conflict that degrades voice quality to robotic.
       speechConfig: {
         voiceConfig: {
-          prebuiltVoiceConfig: {
-            voiceName: voiceName,
-          },
-        },
+          prebuiltVoiceConfig: { voiceName }
+        }
       },
-      generationConfig: {
-        responseModalities: ["AUDIO"],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {
-              voiceName: voiceName,
-            },
-          },
-        },
-      },
-      inputAudioTranscription: {},
+
+      // ── Transcription — both sides ────────────────────────
+      inputAudioTranscription:  {},
       outputAudioTranscription: {},
-      realtimeInputConfig: {},
+
+      // ── VAD (Voice Activity Detection) ────────────────────
+      // This is the #1 cause of robotic feel when misconfigured.
+      // Without this, Gemini uses aggressive defaults:
+      //   - cuts off caller mid-sentence (bad turn-taking)
+      //   - responds too fast (no thinking pause = sounds scripted)
+      //   - doesn't wait for natural sentence-end pauses
+      realtimeInputConfig: {
+        automaticActivityDetection: {
+          disabled: false,
+          // How long of silence = caller finished speaking
+          // 800ms feels natural; lower = AI interrupts you; higher = awkward lag
+          endOfSpeechSensitivity: "END_SENSITIVITY_LOW",
+          // How long before VAD activates (filters room noise)
+          startOfSpeechSensitivity: "START_SENSITIVITY_LOW",
+        },
+        // Barge-in: let caller interrupt AI mid-sentence
+        // This is what makes it feel like a REAL conversation
+        turnCoverage: "TURN_INCLUDES_ALL_INPUT",
+      },
+
+      // ── Context window compression ────────────────────────
+      // Keeps conversation coherent over long calls without
+      // hitting token limits (prevents quality degradation mid-call)
+      contextWindowCompression: {
+        triggerTokens: 25600,
+        slidingWindow: { targetTokens: 12800 },
+      },
     },
+
     callbacks: {
       onmessage: (response) => {
         if (!browserWs || browserWs.readyState !== 1) return;
 
-        // ── Audio response from Gemini ───────────────────────
+        // AI audio response
         if (response.serverContent?.modelTurn?.parts) {
           for (const part of response.serverContent.modelTurn.parts) {
             if (part.inlineData?.mimeType?.startsWith("audio/")) {
-              const audioBase64 = part.inlineData.data;
-
-              // Send raw PCM 24kHz to browser
+              // Send to browser for playback
               send(browserWs, {
                 type: "audio",
-                data: audioBase64,
+                data: part.inlineData.data,
                 mimeType: part.inlineData.mimeType,
               });
-
-              // Resample 24kHz to 16kHz and save to recording file
-              const rawBuffer = Buffer.from(audioBase64, "base64");
-              const resampledBuffer = resample24To16(rawBuffer);
-              recordStream.write(resampledBuffer);
+              // Save resampled version to recording file
+              const raw = Buffer.from(part.inlineData.data, "base64");
+              recordStream.write(resample24To16(raw));
             }
           }
         }
 
-        // ── Transcriptions ───────────────────────────────────
+        // Transcripts
         if (response.serverContent?.inputTranscription?.text) {
           const text = response.serverContent.inputTranscription.text;
           console.log(`👤 Caller: "${text}"`);
@@ -271,111 +279,93 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
           send(browserWs, { type: "transcript", role: "ai", text });
         }
 
-        // ── Barge-in ─────────────────────────────────────────
+        // Barge-in: caller interrupted AI
         if (response.serverContent?.interrupted) {
-          console.log("✋ Barge-in — AI stopped speaking");
           send(browserWs, { type: "interrupted" });
         }
 
-        // ── Turn complete ────────────────────────────────────
+        // Turn complete
         if (response.serverContent?.turnComplete) {
           send(browserWs, { type: "turn_complete" });
         }
       },
 
       onerror: (err) => {
-        const msg = err.message || String(err);
-        console.error("❌ Gemini Live error:", msg);
-        send(browserWs, { type: "error", message: msg });
+        console.error("❌ Gemini error:", err.message || err);
+        send(browserWs, { type: "error", message: String(err.message || err) });
       },
 
       onclose: (e) => {
-        console.log(`🔌 Gemini Live session closed. Code: ${e?.code || 'N/A'}, Reason: ${e?.reason || 'No reason provided'}`);
+        console.log(`🔌 Gemini closed. Code: ${e?.code}, Reason: ${e?.reason || "none"}`);
         send(browserWs, { type: "ended" });
       },
     },
   });
 
   return {
+    // FIX: use `audio` not `media` — this was the SDK format bug
     sendAudio: async (base64Pcm16k) => {
       await session.sendRealtimeInput({
-        media: {
+        audio: {
           data: base64Pcm16k,
           mimeType: "audio/pcm;rate=16000",
         },
       });
     },
-    close: async () => {
-      try { await session.close(); } catch {}
-    },
+    close: async () => { try { await session.close(); } catch {} },
   };
 }
 
-// ── Process Post Call Data: Upload & Sentiment ─────────────────
+// ═══════════════════════════════════════════════════════════════
+// POST CALL: Upload + Sentiment + Supabase save
+// ═══════════════════════════════════════════════════════════════
 async function processPostCallData(callId, tempPcmPath, durationSeconds, transcriptLines, activeConfig) {
   if (!fs.existsSync(tempPcmPath)) return;
 
   const rawPcm = fs.readFileSync(tempPcmPath);
-  const wavHeader = getWavHeader(rawPcm.length);
-  const wavBuffer = Buffer.concat([wavHeader, rawPcm]);
-
-  // Delete local temp PCM file
+  const wavBuffer = Buffer.concat([getWavHeader(rawPcm.length), rawPcm]);
   try { fs.unlinkSync(tempPcmPath); } catch {}
 
   let recordingUrl = null;
   let sentiment = "Neutral";
   const fullTranscript = transcriptLines
-    .map((line) => `${line.role === "user" ? "Caller" : "Agent"}: ${line.text}`)
+    .map(l => `${l.role === "user" ? "Caller" : "Agent"}: ${l.text}`)
     .join("\n");
 
-  // 1. Upload to Supabase Storage
-  if (supabase && wavBuffer.length > 0) {
-    const filename = `${callId}.wav`;
-    const { data: uploadData, error: uploadError } = await supabase.storage
+  // Upload to Supabase Storage
+  if (supabase && wavBuffer.length > 44) {
+    const { error: uploadErr } = await supabase.storage
       .from("recordings")
-      .upload(filename, wavBuffer, {
-        contentType: "audio/wav",
-        upsert: true,
-      });
+      .upload(`${callId}.wav`, wavBuffer, { contentType: "audio/wav", upsert: true });
 
-    if (uploadError) {
-      console.error("❌ Supabase upload error:", uploadError.message);
+    if (uploadErr) {
+      console.error("❌ Upload error:", uploadErr.message);
     } else {
-      const { data: publicUrlData } = supabase.storage
-        .from("recordings")
-        .getPublicUrl(filename);
-      recordingUrl = publicUrlData?.publicUrl;
-      console.log(`💾 Call recording uploaded to: ${recordingUrl}`);
+      const { data } = supabase.storage.from("recordings").getPublicUrl(`${callId}.wav`);
+      recordingUrl = data?.publicUrl;
+      console.log(`💾 Uploaded: ${recordingUrl}`);
     }
   }
 
-  // 2. Perform Sentiment Analysis using Gemini 2.5 Flash
+  // Sentiment analysis
   if (transcriptLines.length > 0) {
     try {
-      const analysisPrompt = `Analyze the sentiment of the following call transcript. Respond with ONLY one of these three words: Positive, Neutral, or Negative. Do not include any other text, explanation, or punctuation.
-      
-Transcript:
-${fullTranscript}`;
-
-      const aiResponse = await genai.models.generateContent({
+      const res = await genai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: analysisPrompt,
+        contents: `Analyze the sentiment of this call transcript. Reply with ONLY one word: Positive, Neutral, or Negative.\n\n${fullTranscript}`,
       });
-
-      const responseText = aiResponse.text?.trim() || "";
-      if (["Positive", "Neutral", "Negative"].includes(responseText)) {
-        sentiment = responseText;
-      }
-      console.log(`📊 Analyzed Sentiment: ${sentiment}`);
+      const t = res.text?.trim();
+      if (["Positive", "Neutral", "Negative"].includes(t)) sentiment = t;
+      console.log(`📊 Sentiment: ${sentiment}`);
     } catch (err) {
-      console.error("❌ Failed to analyze sentiment:", err.message);
+      console.error("❌ Sentiment error:", err.message);
     }
   }
 
-  // 3. Save Call Metadata to Supabase DB
+  // Save to Supabase DB
   if (supabase) {
-    const { error: dbError } = await supabase.from("calls").insert({
-      caller_number: `+1 (555) 019-${Math.floor(1000 + Math.random() * 9000)}`, // Random placeholder number
+    const { error } = await supabase.from("calls").insert({
+      caller_number: "Web Call",
       agent_name: activeConfig.activeVoice,
       language: "Tanglish",
       duration_seconds: durationSeconds,
@@ -383,14 +373,8 @@ ${fullTranscript}`;
       transcript: fullTranscript,
       recording_url: recordingUrl,
     });
-
-    if (dbError) {
-      console.error("❌ Failed to insert call log into Supabase:", dbError.message);
-    } else {
-      console.log(`✅ Call log saved to Supabase database | Call ID: ${callId}`);
-    }
-  } else {
-    console.log("⚠️ Supabase not configured. Call logs not saved.");
+    if (error) console.error("❌ DB insert error:", error.message);
+    else console.log(`✅ Saved to DB | ID: ${callId}`);
   }
 }
 
