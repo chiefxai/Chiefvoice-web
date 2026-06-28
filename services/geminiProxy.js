@@ -187,12 +187,9 @@ async function handleBrowserSession(browserWs) {
 async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStream, transcriptLines) {
 
   const session = await genai.live.connect({
-    model: "gemini-2.5-flash-preview-native-audio-dialog",
-    // ↑ USE THIS MODEL — "native-audio-dialog" is specifically trained
-    //   for conversational, emotionally-aware speech. It produces
-    //   natural breathing, pacing, and tonal variation.
-    //   "gemini-2.5-flash-native-audio-latest" also works but dialog
-    //   variant has better turn-taking and emotional range.
+    model: "gemini-2.5-flash-native-audio-latest",
+    // ↑ Reverted to the verified supported native-audio-latest model
+    //   for your Google AI Studio account.
 
     config: {
       systemInstruction: {
