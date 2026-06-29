@@ -106,6 +106,22 @@ async function handleTwilioSession(twilioWs) {
 
   console.log(`📞 New Twilio voice connection. Voice: ${activeConfig.activeVoice} (${voiceName})`);
 
+  let geminiSetupFinished = false;
+
+  const triggerGreetingIfReady = async () => {
+    if (geminiSetupFinished && streamSid) {
+      const geminiSession = await geminiSessionPromise;
+      if (geminiSession) {
+        try {
+          console.log("👋 Triggering custom warm greeting...");
+          await geminiSession.sendText("Good morning sir! May I speak to Britto?");
+        } catch (e) {
+          console.error("Failed to trigger initial greeting:", e.message);
+        }
+      }
+    }
+  };
+
   // Start connecting to Gemini asynchronously in the background
   const geminiSessionPromise = openGeminiSession(
     twilioWs,
@@ -113,7 +129,11 @@ async function handleTwilioSession(twilioWs) {
     finalPrompt,
     recordStream,
     transcriptLines,
-    () => streamSid
+    () => streamSid,
+    () => {
+      geminiSetupFinished = true;
+      triggerGreetingIfReady();
+    }
   ).then(session => {
     console.log(`✅ Gemini Live session open for Twilio | Call ID: ${callId}`);
     return session;
@@ -137,18 +157,7 @@ async function handleTwilioSession(twilioWs) {
           streamSid = msg.start.streamSid;
           callSid = msg.start.callSid;
           console.log(`🚀 Twilio Stream started: ${streamSid} | CallSid: ${callSid}`);
-          
-          // Wait for Gemini session to be ready, then trigger initial greeting
-          geminiSessionPromise.then(async (geminiSession) => {
-            if (geminiSession) {
-              try {
-                console.log("👋 Triggering custom warm greeting...");
-                await geminiSession.sendText("Good morning sir! May I speak to Britto?");
-              } catch (e) {
-                console.error("Failed to trigger initial greeting:", e.message);
-              }
-            }
-          });
+          triggerGreetingIfReady();
           break;
 
         case "media":
@@ -216,7 +225,7 @@ async function handleTwilioSession(twilioWs) {
 // ═══════════════════════════════════════════════════════════════
 // GEMINI LIVE SESSION
 // ═══════════════════════════════════════════════════════════════
-async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream, transcriptLines, getStreamSid) {
+async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream, transcriptLines, getStreamSid, onSetupComplete) {
   // Inject custom VAD config safely over WS intercept
   const originalSend = ws.prototype.send;
   ws.prototype.send = function (data, options, callback) {
@@ -268,6 +277,13 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
     },
     callbacks: {
       onmessage: (response) => {
+        console.log("📥 Raw Gemini response:", JSON.stringify(response).slice(0, 300));
+        
+        if (response.setupComplete) {
+          console.log("⚙️ Gemini Setup Complete. Ready for greeting.");
+          if (onSetupComplete) onSetupComplete();
+        }
+
         if (!twilioWs || twilioWs.readyState !== 1) return;
 
         // AI audio response
