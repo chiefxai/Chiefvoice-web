@@ -81,6 +81,107 @@ app.post("/api/twilio/incoming", (req, res) => {
 </Response>`);
 });
 
+// Initiate Outbound Twilio Call to User's Phone
+app.post("/api/twilio/call", async (req, res) => {
+  const { phoneNumber } = req.body;
+  if (!phoneNumber) {
+    return res.status(400).json({ error: "Missing phoneNumber in request body" });
+  }
+
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const twilioNumber = process.env.TWILIO_PHONE_NUMBER;
+
+  if (!accountSid || !authToken || !twilioNumber) {
+    return res.status(500).json({
+      error: "Twilio credentials are not configured on the server. Please set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER."
+    });
+  }
+
+  try {
+    const authString = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
+    const protocol = req.secure || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+    const host = req.headers.host;
+    const callbackUrl = `${protocol}://${host}/api/twilio/incoming`;
+
+    console.log(`📞 Triggering Twilio outbound call to ${phoneNumber} from ${twilioNumber}...`);
+
+    const response = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Basic ${authString}`,
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: new URLSearchParams({
+          To: phoneNumber,
+          From: twilioNumber,
+          Url: callbackUrl
+        })
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || `Twilio API error (Status: ${response.status})`);
+    }
+
+    console.log(`✅ Outbound Twilio call initiated. Call SID: ${data.sid}`);
+    res.json({ success: true, callSid: data.sid });
+  } catch (err) {
+    console.error("❌ Failed to initiate Twilio outbound call:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Hang up active Twilio call
+app.post("/api/twilio/hangup", async (req, res) => {
+  const { callSid } = req.body;
+  if (!callSid) {
+    return res.status(400).json({ error: "Missing callSid in request body" });
+  }
+
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+
+  if (!accountSid || !authToken) {
+    return res.status(500).json({
+      error: "Twilio credentials are not configured on the server."
+    });
+  }
+
+  try {
+    const authString = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
+    console.log(`📞 Hanging up Twilio call ${callSid}...`);
+
+    const response = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls/${callSid}.json`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Basic ${authString}`,
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: new URLSearchParams({ Status: "completed" })
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || `Twilio hangup error (Status: ${response.status})`);
+    }
+
+    console.log(`✅ Twilio call completed successfully: ${callSid}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("❌ Failed to hang up Twilio call:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Get active configuration (voice settings and prompt editor)
 app.get("/api/config", (req, res) => {
   res.json(getConfig());

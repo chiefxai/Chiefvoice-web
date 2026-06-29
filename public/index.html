@@ -291,6 +291,63 @@
       border-color: rgba(252,129,129,0.3);
       color: var(--red);
     }
+
+    /* Call Mode Selector & Input Styling */
+    .call-mode-wrap {
+      width: 100%;
+      max-width: 400px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 5px;
+    }
+    .mode-toggle {
+      display: flex;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .mode-btn {
+      flex: 1;
+      padding: 8px;
+      font-size: 12px;
+      background: transparent;
+      border: none;
+      color: #777;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s, color 0.2s;
+    }
+    .mode-btn.active {
+      background: rgba(99,179,237,0.15);
+      color: var(--blue);
+    }
+    .phone-input-wrap {
+      display: none;
+      align-items: center;
+      gap: 8px;
+    }
+    .phone-input-wrap.visible {
+      display: flex;
+    }
+    .phone-input {
+      flex: 1;
+      background: rgba(0,0,0,0.25);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 13px;
+      color: #fff;
+      outline: none;
+      text-align: center;
+    }
+    .phone-input::placeholder {
+      color: #444;
+    }
   </style>
 </head>
 <body>
@@ -332,6 +389,17 @@
   <div class="bottom">
     <div class="safari-notice" id="safariNotice">
       Tap the call button to allow<br>microphone &amp; audio on Safari
+    </div>
+
+    <!-- Outbound Twilio Call Toggle & Input -->
+    <div class="call-mode-wrap">
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="modeWebBtn" onclick="setCallMode('web')">Web Call</button>
+        <button class="mode-btn" id="modePhoneBtn" onclick="setCallMode('phone')">Phone Call</button>
+      </div>
+      <div class="phone-input-wrap" id="phoneInputWrap">
+        <input type="text" class="phone-input" id="phoneInput" placeholder="Phone Number (e.g. +1234567890)" />
+      </div>
     </div>
 
     <div class="mute-row" id="muteRow">
@@ -456,10 +524,99 @@ function addLine(role, text) {
   transcriptBox.scrollTop = transcriptBox.scrollHeight;
 }
 
+// ── Call mode switching ───────────────────────────────────────
+let callMode = "web"; // "web" or "phone"
+let currentCallSid = null;
+
+function setCallMode(mode) {
+  if (isCallActive) return;
+  callMode = mode;
+  document.getElementById("modeWebBtn").classList.toggle("active", mode === "web");
+  document.getElementById("modePhoneBtn").classList.toggle("active", mode === "phone");
+
+  const phoneInputWrap = document.getElementById("phoneInputWrap");
+  if (mode === "phone") {
+    phoneInputWrap.classList.add("visible");
+    hintText.textContent = "Tap to call your phone";
+    setStatus("ready", "Ready to trigger phone call");
+  } else {
+    phoneInputWrap.classList.remove("visible");
+    hintText.textContent = "Tap to start call";
+    setStatus("ready", "Ready to call");
+  }
+}
+
+// ── Outbound Twilio Call Triggers ─────────────────────────────
+async function startPhoneCall() {
+  const phone = document.getElementById("phoneInput").value.trim();
+  if (!phone) {
+    alert("Please enter your phone number first!");
+    return;
+  }
+
+  callBtn.disabled = true;
+  setStatus("active", "Initiating phone call...");
+
+  try {
+    const response = await fetch("/api/twilio/call", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ phoneNumber: phone })
+    });
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || "Call failed to initiate");
+    }
+
+    currentCallSid = result.callSid;
+    isCallActive = true;
+    callBtn.disabled = false;
+    callBtn.classList.add("active");
+    callBtn.textContent = "📵";
+    hintText.textContent = "Tap to end phone call";
+    setStatus("active", "Calling " + phone + "...");
+  } catch (err) {
+    console.error("Phone call error:", err);
+    setStatus("error", err.message.slice(0, 48));
+    callBtn.disabled = false;
+  }
+}
+
+async function endPhoneCall() {
+  callBtn.disabled = true;
+  setStatus("active", "Ending phone call...");
+
+  if (currentCallSid) {
+    try {
+      await fetch("/api/twilio/hangup", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ callSid: currentCallSid })
+      });
+    } catch (e) {
+      console.error("Failed to hang up Twilio call:", e);
+    }
+  }
+
+  isCallActive = false;
+  currentCallSid = null;
+  callBtn.classList.remove("active");
+  callBtn.textContent = "📞";
+  callBtn.disabled = false;
+  hintText.textContent = "Tap to call your phone";
+  setStatus("ready", "Ready to trigger phone call");
+}
+
 // ── Toggle call ───────────────────────────────────────────────
 async function toggleCall() {
-  if (!isCallActive) await startCall();
-  else endCall();
+  if (callMode === "phone") {
+    if (!isCallActive) await startPhoneCall();
+    else await endPhoneCall();
+  } else {
+    if (!isCallActive) await startCall();
+    else endCall();
+  }
 }
 
 async function startCall() {
