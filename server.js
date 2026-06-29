@@ -282,8 +282,9 @@ app.get("/list-models", async (req, res) => {
 
 const server = http.createServer(app);
 
-// WebSocket setup
-const wss = new WebSocketServer({ server, path: "/session" });
+// WebSocket setup using manual upgrade routing to support multiple paths
+const wss = new WebSocketServer({ noServer: true });
+const wssTwilio = new WebSocketServer({ noServer: true });
 
 wss.on("connection", (ws, req) => {
   activeSessionsCount++;
@@ -298,8 +299,6 @@ wss.on("connection", (ws, req) => {
   });
 });
 
-const wssTwilio = new WebSocketServer({ server, path: "/twilio/stream" });
-
 wssTwilio.on("connection", (ws, req) => {
   activeSessionsCount++;
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
@@ -311,6 +310,28 @@ wssTwilio.on("connection", (ws, req) => {
     activeSessionsCount = Math.max(0, activeSessionsCount - 1);
     console.log(`📞 Twilio call disconnected | Active: ${activeSessionsCount}`);
   });
+});
+
+server.on("upgrade", (request, socket, head) => {
+  // Parse pathname safely
+  let pathname;
+  try {
+    pathname = new URL(request.url, `http://${request.headers.host || "localhost"}`).pathname;
+  } catch (e) {
+    pathname = request.url.split("?")[0];
+  }
+
+  if (pathname === "/session") {
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit("connection", ws, request);
+    });
+  } else if (pathname === "/twilio/stream") {
+    wssTwilio.handleUpgrade(request, socket, head, (ws) => {
+      wssTwilio.emit("connection", ws, request);
+    });
+  } else {
+    socket.destroy();
+  }
 });
 
 const PORT = process.env.PORT || 3000;
