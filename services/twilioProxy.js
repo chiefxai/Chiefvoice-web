@@ -226,6 +226,34 @@ async function handleTwilioSession(twilioWs) {
 // GEMINI LIVE SESSION
 // ═══════════════════════════════════════════════════════════════
 async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream, transcriptLines, getStreamSid, onSetupComplete) {
+  const outboundQueue = [];
+  let intervalId = null;
+
+  const startPacing = () => {
+    if (intervalId) return;
+    intervalId = setInterval(() => {
+      // 160 bytes of G.711 mu-law represents 20ms of audio at 8kHz
+      if (outboundQueue.length >= 160) {
+        const chunk = Buffer.from(outboundQueue.splice(0, 160));
+        sendJson(twilioWs, {
+          event: "media",
+          streamSid: getStreamSid(),
+          media: {
+            payload: chunk.toString("base64")
+          }
+        });
+      }
+    }, 20);
+  };
+
+  const stopPacing = () => {
+    if (intervalId) {
+      clearInterval(intervalId);
+      intervalId = null;
+    }
+    outboundQueue.length = 0;
+  };
+
   // Inject custom VAD config safely over WS intercept
   const originalSend = ws.prototype.send;
   ws.prototype.send = function (data, options, callback) {
@@ -298,14 +326,11 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
               // 2. Encode: 8kHz PCM -> 8kHz G.711 u-law
               const mulaw8k = pcm16ToMulaw(pcm8k);
 
-              // 3. Send to Twilio WebSocket
-              sendJson(twilioWs, {
-                event: "media",
-                streamSid: getStreamSid(),
-                media: {
-                  payload: mulaw8k.toString("base64")
-                }
-              });
+              // 3. Queue the bytes for 20ms paced delivery
+              for (let i = 0; i < mulaw8k.length; i++) {
+                outboundQueue.push(mulaw8k[i]);
+              }
+              startPacing();
 
               // Save resampled version to recording file
               recordStream.write(resample24To16(raw24kPCM));
@@ -327,6 +352,7 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
 
         // Barge-in: caller interrupted AI
         if (response.serverContent?.interrupted) {
+          stopPacing();
           sendJson(twilioWs, {
             event: "clear",
             streamSid: getStreamSid()
@@ -338,6 +364,7 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
       },
       onclose: (e) => {
         console.log(`🔌 Gemini closed for Twilio. Code: ${e?.code}, Reason: ${e?.reason || "none"}`);
+        stopPacing();
       },
     },
   });
@@ -366,7 +393,10 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
         }));
       }
     },
-    close: async () => { try { await session.close(); } catch {} },
+    close: async () => {
+      stopPacing();
+      try { await session.close(); } catch {}
+    },
   };
 }
 
