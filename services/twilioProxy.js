@@ -352,8 +352,8 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
       });
     },
     sendText: async (text) => {
-      if (session.conn && session.conn.readyState === 1) {
-        session.conn.send(JSON.stringify({
+      if (session.conn && session.conn.ws && session.conn.ws.readyState === 1) {
+        session.conn.ws.send(JSON.stringify({
           client_content: {
             turns: [
               {
