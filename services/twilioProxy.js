@@ -88,7 +88,6 @@ function sendJson(wsConn, obj) {
 // MAIN TWILIO SESSION HANDLER
 // ═══════════════════════════════════════════════════════════════
 async function handleTwilioSession(twilioWs) {
-  let geminiSession = null;
   let isActive = true;
   let streamSid = null;
   let callSid = null;
@@ -107,29 +106,29 @@ async function handleTwilioSession(twilioWs) {
 
   console.log(`📞 New Twilio voice connection. Voice: ${activeConfig.activeVoice} (${voiceName})`);
 
-  // Open Gemini Live session
-  try {
-    geminiSession = await openGeminiSession(
-      twilioWs,
-      voiceName,
-      finalPrompt,
-      recordStream,
-      transcriptLines,
-      () => streamSid
-    );
+  // Start connecting to Gemini asynchronously in the background
+  const geminiSessionPromise = openGeminiSession(
+    twilioWs,
+    voiceName,
+    finalPrompt,
+    recordStream,
+    transcriptLines,
+    () => streamSid
+  ).then(session => {
     console.log(`✅ Gemini Live session open for Twilio | Call ID: ${callId}`);
-  } catch (err) {
+    return session;
+  }).catch(err => {
     console.error("❌ Gemini session failed for Twilio:", err.message);
     recordStream.close();
     try { fs.unlinkSync(tempPcmPath); } catch {}
     twilioWs.close();
-    return;
-  }
+    return null;
+  });
 
   let isFinalized = false;
 
   twilioWs.on("message", async (rawMsg) => {
-    if (!isActive || !geminiSession) return;
+    if (!isActive) return;
     try {
       const msg = JSON.parse(rawMsg.toString());
       
@@ -138,16 +137,25 @@ async function handleTwilioSession(twilioWs) {
           streamSid = msg.start.streamSid;
           callSid = msg.start.callSid;
           console.log(`🚀 Twilio Stream started: ${streamSid} | CallSid: ${callSid}`);
-          try {
-            console.log("👋 Triggering warm greeting...");
-            await geminiSession.sendText("Hello! Please greet the caller warmly in a friendly Tanglish (Tamil/English mix) tone as Arjun, and ask how you can help them.");
-          } catch (e) {
-            console.error("Failed to trigger initial greeting:", e.message);
-          }
+          
+          // Wait for Gemini session to be ready, then trigger initial greeting
+          geminiSessionPromise.then(async (geminiSession) => {
+            if (geminiSession) {
+              try {
+                console.log("👋 Triggering custom warm greeting...");
+                await geminiSession.sendText("Good morning sir! May I speak to Britto?");
+              } catch (e) {
+                console.error("Failed to trigger initial greeting:", e.message);
+              }
+            }
+          });
           break;
 
         case "media":
           if (msg.media.track === "inbound") {
+            const geminiSession = await geminiSessionPromise;
+            if (!geminiSession) return;
+
             const rawMulaw = Buffer.from(msg.media.payload, "base64");
             
             // 1. Convert G.711 u-law (8kHz) -> PCM 16-bit (8kHz)
@@ -167,6 +175,7 @@ async function handleTwilioSession(twilioWs) {
         case "stop":
           console.log(`🔌 Twilio Stream stopped: ${streamSid}`);
           await finalizeCall();
+          const geminiSession = await geminiSessionPromise;
           if (geminiSession) try { await geminiSession.close(); } catch {}
           break;
       }
