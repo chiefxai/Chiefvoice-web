@@ -203,6 +203,7 @@ async function handleTwilioSession(twilioWs) {
   twilioWs.on("close", async () => {
     console.log(`🌐 Twilio WS closed | Call ID: ${callId}`);
     await finalizeCall();
+    const geminiSession = await geminiSessionPromise;
     if (geminiSession) try { await geminiSession.close(); } catch {}
   });
 
