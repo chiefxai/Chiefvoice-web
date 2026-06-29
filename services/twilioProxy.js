@@ -138,6 +138,12 @@ async function handleTwilioSession(twilioWs) {
           streamSid = msg.start.streamSid;
           callSid = msg.start.callSid;
           console.log(`🚀 Twilio Stream started: ${streamSid} | CallSid: ${callSid}`);
+          try {
+            console.log("👋 Triggering warm greeting...");
+            await geminiSession.sendText("Hello! Please greet the caller warmly in a friendly Tanglish (Tamil/English mix) tone as Arjun, and ask how you can help them.");
+          } catch (e) {
+            console.error("Failed to trigger initial greeting:", e.message);
+          }
           break;
 
         case "media":
@@ -313,10 +319,23 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
   return {
     sendAudio: async (base64Pcm16k) => {
       await session.sendRealtimeInput({
-        media: {
+        audio: {
           data: base64Pcm16k,
           mimeType: "audio/pcm;rate=16000",
         },
+      });
+    },
+    sendText: async (text) => {
+      await session.send({
+        clientContent: {
+          turns: [
+            {
+              role: "user",
+              parts: [{ text: text }]
+            }
+          ],
+          turnComplete: true
+        }
       });
     },
     close: async () => { try { await session.close(); } catch {} },
