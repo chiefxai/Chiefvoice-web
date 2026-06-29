@@ -337,16 +337,8 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
       });
     },
     sendText: async (text) => {
-      await session.send({
-        clientContent: {
-          turns: [
-            {
-              role: "user",
-              parts: [{ text: text }]
-            }
-          ],
-          turnComplete: true
-        }
+      await session.sendRealtimeInput({
+        text: text
       });
     },
     close: async () => { try { await session.close(); } catch {} },
