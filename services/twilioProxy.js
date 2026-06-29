@@ -328,12 +328,10 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
   return {
     sendAudio: async (base64Pcm16k) => {
       await session.sendRealtimeInput({
-        mediaChunks: [
-          {
-            mimeType: "audio/pcm;rate=16000",
-            data: base64Pcm16k,
-          }
-        ]
+        media: {
+          data: base64Pcm16k,
+          mimeType: "audio/pcm;rate=16000",
+        },
       });
     },
     sendText: async (text) => {
