@@ -13,6 +13,7 @@ const ws = require("ws");
 const { WebSocketServer } = ws;
 const { createClient } = require("@supabase/supabase-js");
 const { handleBrowserSession } = require("./services/geminiProxy");
+const { handleTwilioSession, twilioCallNumbers } = require("./services/twilioProxy");
 const { getConfig, updateConfig } = require("./services/config");
 
 const app = express();
@@ -23,6 +24,7 @@ app.set("trust proxy", 1);
 // Middlewares
 app.use(cors()); // Enable CORS for decoupled dashboard
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 app.use("/dashboard", express.static(path.join(__dirname, "dashboard")));
 
@@ -60,6 +62,24 @@ let activeSessionsCount = 0;
 
 // REST API Endpoints
 app.get("/health", (_req, res) => res.json({ ok: true }));
+
+// Twilio Webhook Answer Endpoint
+app.post("/api/twilio/incoming", (req, res) => {
+  const { CallSid, From } = req.body;
+  if (CallSid && From) {
+    twilioCallNumbers.set(CallSid, From);
+    // Remove from cache after 2 minutes
+    setTimeout(() => twilioCallNumbers.delete(CallSid), 120000);
+  }
+
+  res.set("Content-Type", "text/xml");
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Connect>
+    <Stream url="wss://${req.headers.host}/twilio/stream" />
+  </Connect>
+</Response>`);
+});
 
 // Get active configuration (voice settings and prompt editor)
 app.get("/api/config", (req, res) => {
@@ -177,6 +197,21 @@ wss.on("connection", (ws, req) => {
   });
 });
 
+const wssTwilio = new WebSocketServer({ server, path: "/twilio/stream" });
+
+wssTwilio.on("connection", (ws, req) => {
+  activeSessionsCount++;
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  console.log(`📞 Twilio call connected from ${ip} | Active: ${activeSessionsCount}`);
+
+  handleTwilioSession(ws);
+
+  ws.on("close", () => {
+    activeSessionsCount = Math.max(0, activeSessionsCount - 1);
+    console.log(`📞 Twilio call disconnected | Active: ${activeSessionsCount}`);
+  });
+});
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, "0.0.0.0", () => {
   const publicUrl =
@@ -188,5 +223,6 @@ server.listen(PORT, "0.0.0.0", () => {
 
   console.log(`\n✅ ChiefVoice web server running on port ${PORT}`);
   console.log(`📱 Open on mobile: ${publicUrl}`);
-  console.log(`🎙️  WebSocket path: /session\n`);
+  console.log(`🎙️  Browser WebSocket path: /session`);
+  console.log(`📞 Twilio Stream WebSocket path: /twilio/stream\n`);
 });
