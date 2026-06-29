@@ -4,45 +4,7 @@
 // and sample-rate conversions (8kHz <-> 16kHz <-> 24kHz)
 // ============================================================
 
-const BIAS = 0x84;
-const CLIP = 32635;
-
-// Populate lookup tables for ultra-fast audio conversion
-const muLawEncodeTable = new Uint8Array(65536);
-const muLawDecodeTable = new Int16Array(256);
-
-for (let i = -32768; i <= 32767; i++) {
-  const pcm = i;
-  let sign = 0;
-  let sample = pcm;
-  if (sample < 0) {
-    sample = -sample;
-    sign = 0x80;
-  }
-  if (sample > CLIP) sample = CLIP;
-  sample = sample + BIAS;
-
-  let exponent = 7;
-  let mask = 0x4000;
-  while ((sample & mask) === 0 && exponent > 0) {
-    sample <<= 1;
-    exponent--;
-  }
-  let mantissa = (sample >> (exponent + 3)) & 0x0F;
-  let val = ~(sign | (exponent << 4) | mantissa);
-  muLawEncodeTable[pcm + 32768] = val & 0xFF;
-}
-
-for (let i = 0; i < 256; i++) {
-  let mulaw = ~i;
-  let sign = mulaw & 0x80;
-  let exponent = (mulaw >> 4) & 0x07;
-  let mantissa = mulaw & 0x0F;
-  let sample = (mantissa << 3) + BIAS;
-  sample <<= exponent;
-  sample -= BIAS;
-  muLawDecodeTable[i] = sign ? -sample : sample;
-}
+const alawmulaw = require("alawmulaw");
 
 /**
  * Decodes 8kHz G.711 mu-law (Twilio inbound) to 8kHz 16-bit linear PCM
@@ -50,13 +12,9 @@ for (let i = 0; i < 256; i++) {
  * @returns {Buffer} pcmBuffer
  */
 function mulawToPcm16(mulawBuffer) {
-  const pcmBuffer = Buffer.alloc(mulawBuffer.length * 2);
-  for (let i = 0; i < mulawBuffer.length; i++) {
-    const mulawSample = mulawBuffer[i];
-    const pcmSample = muLawDecodeTable[mulawSample];
-    pcmBuffer.writeInt16LE(pcmSample, i * 2);
-  }
-  return pcmBuffer;
+  const uint8Samples = new Uint8Array(mulawBuffer);
+  const decoded16 = alawmulaw.mulaw.decode(uint8Samples);
+  return Buffer.from(decoded16.buffer, decoded16.byteOffset, decoded16.byteLength);
 }
 
 /**
@@ -65,14 +23,15 @@ function mulawToPcm16(mulawBuffer) {
  * @returns {Buffer} mulawBuffer
  */
 function pcm16ToMulaw(pcmBuffer) {
-  const count = pcmBuffer.length / 2;
-  const mulawBuffer = Buffer.alloc(count);
-  for (let i = 0; i < count; i++) {
-    const pcmSample = pcmBuffer.readInt16LE(i * 2);
-    // Map negative to positive index correctly
-    mulawBuffer[i] = muLawEncodeTable[pcmSample + 32768];
-  }
-  return mulawBuffer;
+  const aligned = new Uint8Array(pcmBuffer.length);
+  aligned.set(pcmBuffer);
+  const int16Samples = new Int16Array(
+    aligned.buffer, 
+    aligned.byteOffset, 
+    aligned.length / 2
+  );
+  const encoded8 = alawmulaw.mulaw.encode(int16Samples);
+  return Buffer.from(encoded8.buffer, encoded8.byteOffset, encoded8.byteLength);
 }
 
 /**
