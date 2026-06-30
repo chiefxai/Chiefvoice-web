@@ -170,13 +170,13 @@ async function updateMetrics() {
 // ── 4. Fetch Call Logs ─────────────────────────────────────────
 async function updateCallLogs() {
   try {
-    callsTableBody.innerHTML = `<tr><td colspan="6" class="table-empty">Loading records...</td></tr>`;
+    callsTableBody.innerHTML = `<tr><td colspan="7" class="table-empty">Loading records...</td></tr>`;
     const response = await fetch(`${BASE_URL}/api/calls`);
     const data = await response.json();
     
     const calls = data.calls || [];
     if (calls.length === 0) {
-      callsTableBody.innerHTML = `<tr><td colspan="6" class="table-empty">No calls recorded yet.</td></tr>`;
+      callsTableBody.innerHTML = `<tr><td colspan="7" class="table-empty">No calls recorded yet.</td></tr>`;
       return;
     }
 
@@ -184,6 +184,9 @@ async function updateCallLogs() {
     calls.forEach(call => {
       const dateStr = new Date(call.created_at).toLocaleString();
       const durationStr = `${call.duration_seconds}s`;
+      const costStr = call.cost_usd !== undefined && call.cost_usd !== null
+        ? `$${Number(call.cost_usd).toFixed(4)}`
+        : "$0.0000";
       
       // Sentiment badge markup
       const sentimentClass = `badge-${call.sentiment?.toLowerCase() || 'neutral'}`;
@@ -194,6 +197,7 @@ async function updateCallLogs() {
         <td><strong>${call.caller_number || "Unknown"}</strong></td>
         <td>🎙️ ${call.agent_name || "Arjun"}</td>
         <td>${durationStr}</td>
+        <td><strong>${costStr}</strong></td>
         <td><span class="badge ${sentimentClass}">${sentimentText}</span></td>
         <td>${dateStr}</td>
         <td class="action-row">
@@ -218,7 +222,7 @@ async function updateCallLogs() {
 
   } catch (err) {
     console.error("Error loading call logs:", err.message);
-    callsTableBody.innerHTML = `<tr><td colspan="6" class="table-empty" style="color:var(--red)">Failed to load call logs.</td></tr>`;
+    callsTableBody.innerHTML = `<tr><td colspan="7" class="table-empty" style="color:var(--red)">Failed to load call logs.</td></tr>`;
   }
 }
 

@@ -130,10 +130,21 @@ async function handleBrowserSession(browserWs) {
 
   console.log(`📞 New call | ID: ${callId} | Voice: ${activeConfig.activeVoice} (${voiceName})`);
 
+  let liveInputTokens = 0;
+  let liveOutputTokens = 0;
+
   // ── Open Gemini session ───────────────────────────────────
   try {
     geminiSession = await openGeminiSession(
-      browserWs, voiceName, finalPrompt, recordStream, transcriptLines
+      browserWs,
+      voiceName,
+      finalPrompt,
+      recordStream,
+      transcriptLines,
+      (inTokens, outTokens) => {
+        liveInputTokens += inTokens;
+        liveOutputTokens += outTokens;
+      }
     );
     console.log(`✅ Gemini Live session open | Call ID: ${callId}`);
     send(browserWs, { type: "ready" });
@@ -172,7 +183,7 @@ async function handleBrowserSession(browserWs) {
     recordStream.end();
     const duration = Math.round((Date.now() - startTime) / 1000);
     await new Promise(r => recordStream.on("finish", r));
-    processPostCallData(callId, tempPcmPath, duration, transcriptLines, activeConfig)
+    processPostCallData(callId, tempPcmPath, duration, transcriptLines, activeConfig, liveInputTokens, liveOutputTokens)
       .catch(err => console.error("❌ Post-call error:", err.message));
   }
 
@@ -191,7 +202,7 @@ async function handleBrowserSession(browserWs) {
 // ═══════════════════════════════════════════════════════════════
 // GEMINI LIVE SESSION — CORE VOICE QUALITY SETTINGS
 // ═══════════════════════════════════════════════════════════════
-async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStream, transcriptLines) {
+async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStream, transcriptLines, onTokenUsage) {
 
   // ── Intercept WebSocket Send to Inject VAD Config ──────────
   // The @google/genai SDK ignores and strips realtimeInputConfig/VAD keys
@@ -276,6 +287,16 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
 
     callbacks: {
       onmessage: (response) => {
+        // Extract token usage metadata from live session
+        if (response.usageMetadata && onTokenUsage) {
+          const inCount = response.usageMetadata.promptTokenCount || 0;
+          const outCount = response.usageMetadata.candidatesTokenCount || 
+                           response.usageMetadata.responseTokenCount || 0;
+          if (inCount > 0 || outCount > 0) {
+            onTokenUsage(inCount, outCount);
+          }
+        }
+
         if (!browserWs || browserWs.readyState !== 1) return;
 
         // AI audio response
@@ -348,7 +369,7 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
 // ═══════════════════════════════════════════════════════════════
 // POST CALL: Upload + Sentiment + Supabase save
 // ═══════════════════════════════════════════════════════════════
-async function processPostCallData(callId, tempPcmPath, durationSeconds, transcriptLines, activeConfig) {
+async function processPostCallData(callId, tempPcmPath, durationSeconds, transcriptLines, activeConfig, liveInputTokens, liveOutputTokens) {
   if (!fs.existsSync(tempPcmPath)) return;
 
   const rawPcm = fs.readFileSync(tempPcmPath);
@@ -376,6 +397,9 @@ async function processPostCallData(callId, tempPcmPath, durationSeconds, transcr
     }
   }
 
+  let sentimentInputTokens = 0;
+  let sentimentOutputTokens = 0;
+
   // Sentiment analysis
   if (transcriptLines.length > 0) {
     try {
@@ -385,11 +409,27 @@ async function processPostCallData(callId, tempPcmPath, durationSeconds, transcr
       });
       const t = res.text?.trim();
       if (["Positive", "Neutral", "Negative"].includes(t)) sentiment = t;
-      console.log(`📊 Sentiment: ${sentiment}`);
+      console.log("📊 Sentiment result:", sentiment);
+
+      // Capture post-call sentiment API token usage
+      if (res.usageMetadata) {
+        sentimentInputTokens = res.usageMetadata.promptTokenCount || 0;
+        sentimentOutputTokens = res.usageMetadata.candidatesTokenCount || 
+                                res.usageMetadata.responseTokenCount || 0;
+      }
     } catch (err) {
       console.error("❌ Sentiment error:", err.message);
     }
   }
+
+  // Combined token calculation for BOTH models
+  const totalInputTokens = liveInputTokens + sentimentInputTokens;
+  const totalOutputTokens = liveOutputTokens + sentimentOutputTokens;
+
+  // Pricing: Input: $0.075 / 1M tokens ($0.000000075 / token) | Output: $0.30 / 1M tokens ($0.0000003 / token)
+  const costUsd = (totalInputTokens * 0.000000075) + (totalOutputTokens * 0.0000003);
+
+  console.log(`📊 Cost Breakdown: Total Input Tokens=${totalInputTokens}, Total Output Tokens=${totalOutputTokens}, Cost=$${costUsd.toFixed(5)}`);
 
   // Save to Supabase DB
   if (supabase) {
@@ -401,6 +441,9 @@ async function processPostCallData(callId, tempPcmPath, durationSeconds, transcr
       sentiment,
       transcript: fullTranscript,
       recording_url: recordingUrl,
+      cost_usd: costUsd,
+      input_tokens: totalInputTokens,
+      output_tokens: totalOutputTokens
     });
     if (error) console.error("❌ DB insert error:", error.message);
     else console.log(`✅ Saved to DB | ID: ${callId}`);
