@@ -28,7 +28,7 @@ function pcm16ToMulaw(pcmBuffer) {
   const int16Samples = new Int16Array(
     aligned.buffer, 
     aligned.byteOffset, 
-    aligned.length / 2
+    Math.floor(aligned.length / 2)
   );
   const encoded8 = alawmulaw.mulaw.encode(int16Samples);
   return Buffer.from(encoded8.buffer, encoded8.byteOffset, encoded8.byteLength);
