@@ -146,6 +146,9 @@ async function handleBrowserSession(browserWs) {
       (inTokens, outTokens) => {
         liveInputTokens += inTokens;
         liveOutputTokens += outTokens;
+        if (global.broadcastLog) {
+          global.broadcastLog("🪙 Gemini Live Tokens Consumed", { type: "usage", inputTokens: liveInputTokens, outputTokens: liveOutputTokens });
+        }
       },
       (outBytes) => {
         totalOutboundAudioBytes += outBytes;
@@ -153,6 +156,9 @@ async function handleBrowserSession(browserWs) {
     );
     console.log(`✅ Gemini Live session open | Call ID: ${callId}`);
     send(browserWs, { type: "ready" });
+    if (global.broadcastLog) {
+      global.broadcastLog(`📞 Voice Session Open | Call ID: ${callId}`, { type: "system", callId });
+    }
   } catch (err) {
     console.error("❌ Gemini session failed:", err.message);
     send(browserWs, { type: "error", message: "Failed to connect to AI. Check API key." });
@@ -190,6 +196,9 @@ async function handleBrowserSession(browserWs) {
     recordStream.end();
     const duration = Math.round((Date.now() - startTime) / 1000);
     await new Promise(r => recordStream.on("finish", r));
+    if (global.broadcastLog) {
+      global.broadcastLog(`🛑 Call completed | Duration: ${duration}s | Total Tokens: ${liveInputTokens + liveOutputTokens}`, { type: "system", duration, inputTokens: liveInputTokens, outputTokens: liveOutputTokens });
+    }
     processPostCallData(callId, tempPcmPath, duration, transcriptLines, activeConfig, liveInputTokens, liveOutputTokens, totalInboundAudioBytes, totalOutboundAudioBytes)
       .catch(err => console.error("❌ Post-call error:", err.message));
   }
@@ -332,12 +341,18 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
           console.log(`👤 Caller: "${text}"`);
           transcriptLines.push({ role: "user", text });
           send(browserWs, { type: "transcript", role: "user", text });
+          if (global.broadcastLog) {
+            global.broadcastLog(`👤 Caller: "${text}"`, { type: "transcript", role: "user", text });
+          }
         }
         if (response.serverContent?.outputTranscription?.text) {
           const text = response.serverContent.outputTranscription.text;
           console.log(`🤖 Agent: "${text}"`);
           transcriptLines.push({ role: "ai", text });
           send(browserWs, { type: "transcript", role: "ai", text });
+          if (global.broadcastLog) {
+            global.broadcastLog(`🤖 Agent: "${text}"`, { type: "transcript", role: "ai", text });
+          }
         }
 
         // Barge-in: caller interrupted AI

@@ -138,6 +138,9 @@ async function handleTwilioSession(twilioWs) {
     (inTokens, outTokens) => {
       liveInputTokens += inTokens;
       liveOutputTokens += outTokens;
+      if (global.broadcastLog) {
+        global.broadcastLog("🪙 Gemini Live Tokens Consumed", { type: "usage", inputTokens: liveInputTokens, outputTokens: liveOutputTokens });
+      }
     },
     (outBytes) => {
       totalOutboundAudioBytes += outBytes;
@@ -148,6 +151,9 @@ async function handleTwilioSession(twilioWs) {
     }
   ).then(session => {
     console.log(`✅ Gemini Live session open for Twilio | Call ID: ${callId}`);
+    if (global.broadcastLog) {
+      global.broadcastLog(`📞 Voice Session Open | Call ID: ${callId}`, { type: "system", callId });
+    }
     return session;
   }).catch(err => {
     console.error("❌ Gemini session failed for Twilio:", err.message);
@@ -217,6 +223,10 @@ async function handleTwilioSession(twilioWs) {
     // Retrieve caller phone number from cache if matched
     const callerNumber = twilioCallNumbers.get(callSid) || "Twilio Call";
     twilioCallNumbers.delete(callSid); // clean up
+
+    if (global.broadcastLog) {
+      global.broadcastLog(`🛑 Call completed | Caller: ${callerNumber} | Duration: ${duration}s | Total Tokens: ${liveInputTokens + liveOutputTokens}`, { type: "system", duration, inputTokens: liveInputTokens, outputTokens: liveOutputTokens });
+    }
 
     processPostCallData(callId, callerNumber, tempPcmPath, duration, transcriptLines, activeConfig, liveInputTokens, liveOutputTokens, totalInboundAudioBytes, totalOutboundAudioBytes)
       .catch(err => console.error("❌ Post-call error for Twilio:", err.message));
@@ -369,11 +379,17 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
           const text = response.serverContent.inputTranscription.text;
           console.log(`👤 Twilio Caller: "${text}"`);
           transcriptLines.push({ role: "user", text });
+          if (global.broadcastLog) {
+            global.broadcastLog(`👤 Caller: "${text}"`, { type: "transcript", role: "user", text });
+          }
         }
         if (response.serverContent?.outputTranscription?.text) {
           const text = response.serverContent.outputTranscription.text;
           console.log(`🤖 Agent to Twilio: "${text}"`);
           transcriptLines.push({ role: "ai", text });
+          if (global.broadcastLog) {
+            global.broadcastLog(`🤖 Agent: "${text}"`, { type: "transcript", role: "ai", text });
+          }
         }
 
 

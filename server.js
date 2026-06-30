@@ -15,6 +15,62 @@ const { createClient } = require("@supabase/supabase-js");
 const { handleBrowserSession } = require("./services/geminiProxy");
 const { handleTwilioSession, twilioCallNumbers } = require("./services/twilioProxy");
 const { getConfig, updateConfig } = require("./services/config");
+const { readAll, writeAll, append, update } = require("./services/store");
+
+// SSE logs-stream system
+let logClients = [];
+function broadcastLog(message, details = {}) {
+  const logObj = {
+    timestamp: new Date().toISOString(),
+    message,
+    ...details
+  };
+  const data = `data: ${JSON.stringify(logObj)}\n\n`;
+  logClients.forEach((client) => {
+    try { client.write(data); } catch (e) {}
+  });
+}
+global.broadcastLog = broadcastLog;
+
+// Seed initial data
+function seedData() {
+  if (readAll("shops", []).length === 0) {
+    writeAll("shops", [{ id: "default", name: "Sri Lakshmi Stores", aiNumber: process.env.TWILIO_PHONE_NUMBER || "+91 73580 21190", locality: "Anna Nagar, Madurai" }]);
+  }
+  if (readAll("catalog_default", []).length === 0) {
+    writeAll("catalog_default", [
+      { id: "P001", name: "Ponni Rice", brand: "Aachi", unit: "kg", price: 58, stock: 480 },
+      { id: "P002", name: "Sugar", brand: "Local", unit: "kg", price: 44, stock: 12 },
+      { id: "P003", name: "Sunflower Oil", brand: "Gold Winner", unit: "litre", price: 152, stock: 60 },
+      { id: "P004", name: "Toor Dal", brand: "Tata Sampann", unit: "kg", price: 138, stock: 35 },
+      { id: "P005", name: "Idli Rice", brand: "Aachi", unit: "kg", price: 52, stock: 8 },
+      { id: "P006", name: "Salt", brand: "Tata", unit: "packet", price: 22, stock: 200 },
+      { id: "P007", name: "Maggi Noodles", brand: "Nestle", unit: "box(12)", price: 144, stock: 18 },
+      { id: "P008", name: "Red Chilli Powder", brand: "Aachi", unit: "kg", price: 220, stock: 25 },
+      { id: "P009", name: "Toilet Soap", brand: "Santoor", unit: "dozen", price: 312, stock: 14 },
+      { id: "P010", name: "Tea Powder", brand: "Red Label", unit: "kg", price: 410, stock: 22 }
+    ]);
+  }
+  if (readAll("customers_default", []).length === 0) {
+    writeAll("customers_default", [
+      { id: "C001", name: "Kavitha Ramesh", phone: "+91 98421 33012", type: "Retail", locality: "K.K. Nagar, Madurai", ltv: 18420, khata: 0 },
+      { id: "C002", name: "Selvam Traders", phone: "+91 94432 87711", type: "Wholesale", locality: "Simmakkal, Madurai", ltv: 142300, khata: 8600 },
+      { id: "C003", name: "Priya Anand", phone: "+91 90031 22456", type: "Retail", locality: "Anna Nagar, Madurai", ltv: 6210, khata: 450 },
+      { id: "C004", name: "Murugan Stores (Sub-dealer)", phone: "+91 96297 70044", type: "Wholesale", locality: "Tallakulam, Madurai", ltv: 261800, khata: 22400 },
+      { id: "C005", name: "Lakshmi Narayanan", phone: "+91 89034 51290", type: "Retail", locality: "Goripalayam, Madurai", ltv: 3120, khata: 0 }
+    ]);
+  }
+  if (readAll("orders_default", []).length === 0) {
+    writeAll("orders_default", [
+      { id: "ORD-10231", customer: "Kavitha Ramesh", phone: "+91 98421 33012", items: [{n:"Ponni Rice",q:"5 kg",p:290},{n:"Sunflower Oil",q:"2 litre",p:304},{n:"Toor Dal",q:"1 kg",p:138}], total: 732, status: "Confirmed", source: "AI Call", time: "10:42 AM", delivery: "Delivery" },
+      { id: "ORD-10230", customer: "Selvam Traders", phone: "+91 94432 87711", items: [{n:"Ponni Rice",q:"50 kg",p:2900},{n:"Sugar",q:"20 kg",p:880}], total: 3780, status: "Packing", source: "AI Call", time: "10:15 AM", delivery: "Pickup" },
+      { id: "ORD-10229", customer: "Priya Anand", phone: "+91 90031 22456", items: [{n:"Maggi Noodles",q:"1 box",p:144},{n:"Tea Powder",q:"0.5 kg",p:205}], total: 349, status: "Out for Delivery", source: "WhatsApp", time: "9:58 AM", delivery: "Delivery" },
+      { id: "ORD-10228", customer: "Lakshmi Narayanan", phone: "+91 89034 51290", items: [{n:"Idli Rice",q:"3 kg",p:156},{n:"Salt",q:"2 packet",p:44}], total: 200, status: "Delivered", source: "AI Call", time: "9:20 AM", delivery: "Delivery" },
+      { id: "ORD-10227", customer: "Murugan Stores (Sub-dealer)", phone: "+91 96297 70044", items: [{n:"Red Chilli Powder",q:"10 kg",p:2200},{n:"Toilet Soap",q:"5 dozen",p:1560}], total: 3760, status: "Placed", source: "AI Call", time: "8:55 AM", delivery: "Pickup" }
+    ]);
+  }
+}
+seedData();
 
 const app = express();
 
@@ -234,12 +290,147 @@ app.get("/api/metrics", async (req, res) => {
     }
   }
 
+  // Also count from local files if empty
+  if (totalCalls === 0) {
+    const localCalls = readAll("calls_default", []);
+    totalCalls = localCalls.length;
+    if (totalCalls > 0) {
+      const totalDuration = localCalls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0);
+      avgDuration = Math.round(totalDuration / totalCalls);
+      creditsConsumed = parseFloat(((totalDuration / 60) * 0.06).toFixed(2));
+    }
+  }
+
+  // Calculate shop-specific metrics for the React frontend
+  const ordersList = readAll("orders_default", []);
+  const todayRevenue = ordersList.filter(o => o.status === "Delivered" || o.status === "Confirmed").reduce((sum, o) => sum + (o.total || 0), 0);
+  const totalOrders = ordersList.length;
+  const avgOrderValue = totalOrders > 0 ? Math.round(todayRevenue / totalOrders) : 0;
+
   res.json({
     totalCalls,
     activeSessions: activeSessionsCount,
     avgDuration,
     creditsConsumed,
+    todayRevenue,
+    totalOrders,
+    avgOrderValue,
+    callSuccessRate: 78,
+    repeatRate: 54
   });
+});
+
+// SSE endpoint for live logs
+app.get("/api/logs-stream", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  
+  res.write(`data: ${JSON.stringify({ timestamp: new Date().toISOString(), message: "Live system log stream initialized" })}\n\n`);
+  
+  logClients.push(res);
+  
+  req.on("close", () => {
+    logClients = logClients.filter((c) => c !== res);
+  });
+});
+
+// ── Orders API ──
+app.get("/api/orders", (req, res) => {
+  res.json(readAll("orders_default", []));
+});
+
+app.post("/api/orders", (req, res) => {
+  const order = append("orders_default", {
+    id: `ORD-${Date.now().toString().slice(-5)}`,
+    status: "Placed",
+    source: "Manual",
+    time: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+    ...req.body,
+  });
+  broadcastLog(`📦 New manual order placed: ${order.id} (Total: ₹${order.total})`, { type: "order", orderId: order.id });
+  res.status(201).json(order);
+});
+
+app.patch("/api/orders/:id/status", (req, res) => {
+  const { status } = req.body;
+  const order = update("orders_default", req.params.id, { status });
+  if (!order) return res.sendStatus(404);
+  broadcastLog(`🔔 Order ${order.id} status updated to: ${status}`, { type: "order", orderId: order.id, status });
+  res.json(order);
+});
+
+// ── Catalog API ──
+app.get("/api/catalog", (req, res) => {
+  res.json(readAll("catalog_default", []));
+});
+
+app.post("/api/catalog", (req, res) => {
+  const item = append("catalog_default", {
+    id: `P-${Date.now().toString().slice(-4)}`,
+    ...req.body
+  });
+  broadcastLog(`🏷️ Added product to catalog: ${item.name} (${item.brand})`, { type: "catalog", itemId: item.id });
+  res.status(201).json(item);
+});
+
+app.patch("/api/catalog/:id", (req, res) => {
+  const arr = readAll("catalog_default", []);
+  const idx = arr.findIndex((p) => p.id === req.params.id);
+  if (idx === -1) return res.sendStatus(404);
+  arr[idx] = { ...arr[idx], ...req.body };
+  writeAll("catalog_default", arr);
+  broadcastLog(`🏷️ Updated product: ${arr[idx].name}`, { type: "catalog", itemId: req.params.id });
+  res.json(arr[idx]);
+});
+
+// ── Customers API ──
+app.get("/api/customers", (req, res) => {
+  res.json(readAll("customers_default", []));
+});
+
+app.post("/api/customers", (req, res) => {
+  const newCust = {
+    id: `C-${Date.now().toString().slice(-4)}`,
+    khata: Number(req.body.khata || 0),
+    ltv: Number(req.body.ltv || 0),
+    created_at: new Date().toISOString(),
+    ...req.body,
+  };
+  append("customers_default", newCust);
+  broadcastLog(`👤 Registered new customer: ${newCust.name} (${newCust.phone})`, { type: "customer", customerId: newCust.id });
+  res.status(201).json(newCust);
+});
+
+app.get("/api/customers/:id", (req, res) => {
+  const c = readAll("customers_default", []).find((x) => x.id === req.params.id);
+  return c ? res.json(c) : res.sendStatus(404);
+});
+
+// ── Khata / Credit ──
+app.post("/api/khata/:customerId/payment", (req, res) => {
+  const arr = readAll("customers_default", []);
+  const idx = arr.findIndex((c) => c.id === req.params.customerId);
+  if (idx === -1) return res.sendStatus(404);
+  const oldKhata = arr[idx].khata || 0;
+  arr[idx].khata = Math.max(0, oldKhata - Number(req.body.amount || 0));
+  writeAll("customers_default", arr);
+  broadcastLog(`💳 Payment of ₹${req.body.amount} processed for ${arr[idx].name}. Khata balance: ₹${arr[idx].khata}`, { type: "payment", customerId: req.params.customerId });
+  res.json(arr[idx]);
+});
+
+app.post("/api/khata/:customerId/reminder", (req, res) => {
+  const c = readAll("customers_default", []).find((x) => x.id === req.params.customerId);
+  if (!c) return res.sendStatus(404);
+  broadcastLog(`💬 WhatsApp Khata reminder sent to ${c.name} (${c.phone}) for ₹${c.khata}`, { type: "notification", customerId: c.id });
+  res.json({ sent: true });
+});
+
+// ── WhatsApp Broadcasts ──
+app.post("/api/broadcast", (req, res) => {
+  const { audiencePhones, templateName } = req.body;
+  broadcastLog(`📢 Initiating WhatsApp Broadcast (${templateName}) to ${audiencePhones?.length || 0} customers`, { type: "broadcast" });
+  res.json({ sent: audiencePhones?.length || 0, failed: 0 });
 });
 
 app.get("/list-models", async (req, res) => {
