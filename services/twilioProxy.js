@@ -347,8 +347,8 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
             eventSummary += `interrupted (caller barge-in)`;
           } else if (response.serverContent?.turnComplete) {
             eventSummary += `turnComplete`;
-          } else if (response.usageMetadata) {
-            const u = response.usageMetadata;
+          } else if (response.usageMetadata || response.serverContent?.usageMetadata) {
+            const u = response.usageMetadata || response.serverContent?.usageMetadata;
             eventSummary += `usageMetadata (promptTokens: ${u.promptTokenCount || 0}, candidatesTokens: ${u.candidatesTokenCount || 0})`;
           } else {
             eventSummary += Object.keys(response).join(", ");
@@ -357,7 +357,7 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
         }
 
         // Extract token usage metadata from live session
-        const usage = response.usageMetadata || response.usage_metadata;
+        const usage = response.usageMetadata || response.usage_metadata || response.serverContent?.usageMetadata || response.serverContent?.usage_metadata;
         if (usage && onTokenUsage) {
           const inCount = usage.promptTokenCount || usage.prompt_token_count || 0;
           const outCount = usage.candidatesTokenCount || usage.candidates_token_count || 
