@@ -708,3 +708,82 @@ input:checked + .slider.round {
 input:checked + .slider.round:before {
   transform: translateX(20px);
 }
+
+/* ── Outbound Phone Call Form ──────────────────────────────── */
+.phone-call-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.input-group label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.phone-call-form input[type="tel"] {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--panel-border);
+  padding: 12px 16px;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 15px;
+  outline: none;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.phone-call-form input[type="tel"]:focus {
+  border-color: var(--blue);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.btn-danger {
+  background: var(--red);
+  border: none;
+  color: #fff;
+  width: 100%;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #e53e3e;
+  box-shadow: 0 4px 15px rgba(229, 62, 62, 0.3);
+}
+
+.btn-danger:disabled, .btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.call-status-message {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--panel-border);
+  text-align: center;
+  margin-top: 4px;
+  transition: all 0.2s;
+}
+
+.call-status-message.active {
+  background: rgba(72, 187, 120, 0.1);
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.call-status-message.error {
+  background: rgba(245, 101, 116, 0.1);
+  border-color: var(--red);
+  color: var(--red);
+}
+

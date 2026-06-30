@@ -133,6 +133,27 @@
             </div>
           </div>
         </div>
+        
+        <!-- Outbound Phone Call Panel -->
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Outbound Phone Call</h2>
+            <span class="tag">Twilio API</span>
+          </div>
+          <div class="phone-call-form">
+            <div class="input-group">
+              <label for="outbound-phone-number">Customer Phone Number</label>
+              <input type="tel" id="outbound-phone-number" placeholder="+918939479296" value="+918939479296">
+            </div>
+            <div class="action-row" style="margin-top: 10px;">
+              <button id="start-call-btn" class="btn btn-primary" style="flex: 1;">📞 Call</button>
+              <button id="hangup-call-btn" class="btn btn-danger" style="flex: 1;" disabled>🛑 Hang Up</button>
+            </div>
+            <div id="call-status-indicator" class="call-status-message hidden">
+              Idle
+            </div>
+          </div>
+        </div>
 
         <!-- AI System Prompt Editor -->
         <div class="panel">

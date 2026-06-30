@@ -52,6 +52,7 @@ SPEECH STYLE PROTOCOL (CRITICAL FOR HUMAN REALISM):
 // UI State variables
 let activeVoice = "Arjun";
 let currentConfig = null;
+let activeCallSid = null;
 
 // DOM Elements
 const voiceCards = document.querySelectorAll(".voice-card");
@@ -66,6 +67,12 @@ const systemPromptEditor = document.getElementById("system-prompt-editor");
 const savePromptBtn = document.getElementById("save-prompt-btn");
 const refreshLogsBtn = document.getElementById("refresh-logs-btn");
 const callsTableBody = document.getElementById("calls-table-body");
+
+// Outbound calling elements
+const startCallBtn = document.getElementById("start-call-btn");
+const hangupCallBtn = document.getElementById("hangup-call-btn");
+const outboundPhoneNumber = document.getElementById("outbound-phone-number");
+const callStatusIndicator = document.getElementById("call-status-indicator");
 
 // Metrics elements
 const metricTotalCalls = document.getElementById("metric-total-calls");
@@ -297,6 +304,80 @@ closePlayerBtn.addEventListener("click", () => {
   mainAudioElement.pause();
   audioPlayerBar.classList.add("hidden");
 });
+
+// Outbound Call Handlers
+async function placeOutboundCall() {
+  const number = outboundPhoneNumber.value.trim();
+  if (!number) {
+    showCallStatus("Please enter a valid phone number", "error");
+    return;
+  }
+
+  showCallStatus("Initiating call...", "active");
+  startCallBtn.disabled = true;
+  hangupCallBtn.disabled = false;
+
+  try {
+    const response = await fetch(`${BASE_URL}/api/twilio/call`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phoneNumber: number })
+    });
+    const data = await response.json();
+    if (data.success && data.callSid) {
+      activeCallSid = data.callSid;
+      showCallStatus("Call ringing...", "active");
+    } else {
+      throw new Error(data.error || "Failed to trigger call");
+    }
+  } catch (err) {
+    showCallStatus(err.message, "error");
+    startCallBtn.disabled = false;
+    hangupCallBtn.disabled = true;
+  }
+}
+
+async function hangupOutboundCall() {
+  if (!activeCallSid) {
+    showCallStatus("No active call to hang up", "error");
+    return;
+  }
+
+  showCallStatus("Hanging up...", "active");
+  hangupCallBtn.disabled = true;
+
+  try {
+    const response = await fetch(`${BASE_URL}/api/twilio/hangup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callSid: activeCallSid })
+    });
+    const data = await response.json();
+    if (data.success) {
+      showCallStatus("Call completed", "");
+      activeCallSid = null;
+      startCallBtn.disabled = false;
+      setTimeout(updateCallLogs, 2000);
+    } else {
+      throw new Error(data.error || "Failed to hang up call");
+    }
+  } catch (err) {
+    showCallStatus(err.message, "error");
+    hangupCallBtn.disabled = false;
+  }
+}
+
+function showCallStatus(message, type) {
+  callStatusIndicator.textContent = message;
+  callStatusIndicator.className = "call-status-message";
+  if (type) {
+    callStatusIndicator.classList.add(type);
+  }
+  callStatusIndicator.classList.remove("hidden");
+}
+
+startCallBtn.addEventListener("click", placeOutboundCall);
+hangupCallBtn.addEventListener("click", hangupOutboundCall);
 
 // ── Initialization & Polling ──────────────────────────────────
 async function init() {
