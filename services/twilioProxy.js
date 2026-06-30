@@ -130,7 +130,6 @@ async function handleTwilioSession(twilioWs) {
     recordStream,
     transcriptLines,
     () => streamSid,
-    () => twilioCallNumbers.get(callSid) || "",
     () => {
       geminiSetupFinished = true;
       triggerGreetingIfReady();
@@ -223,60 +222,9 @@ async function handleTwilioSession(twilioWs) {
   });
 }
 
-// WHATSAPP API INTEGRATION
-// ═══════════════════════════════════════════════════════════════
-async function sendWhatsAppMessage(to, body) {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_WHATSAPP_NUMBER || "+14155238886";
-
-  if (!accountSid || !authToken) {
-    console.error("❌ Missing Twilio credentials for WhatsApp");
-    return false;
-  }
-
-  let formattedTo = to.trim();
-  if (!formattedTo.startsWith("+")) {
-    if (formattedTo.length === 10) {
-      formattedTo = "+91" + formattedTo;
-    } else {
-      formattedTo = "+" + formattedTo;
-    }
-  }
-
-  try {
-    const authString = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
-    const response = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Basic ${authString}`,
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: new URLSearchParams({
-          To: `whatsapp:${formattedTo}`,
-          From: `whatsapp:${from}`,
-          Body: body
-        })
-      }
-    );
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.message || `Status: ${response.status}`);
-    }
-    console.log(`✅ WhatsApp message sent. SID: ${data.sid}`);
-    return true;
-  } catch (e) {
-    console.error("❌ WhatsApp send failed:", e.message);
-    return false;
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
 // GEMINI LIVE SESSION
 // ═══════════════════════════════════════════════════════════════
-async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream, transcriptLines, getStreamSid, getCallerNumber, onSetupComplete) {
+async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream, transcriptLines, getStreamSid, onSetupComplete) {
   const outboundQueue = [];
   let intervalId = null;
 
@@ -339,26 +287,7 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
           prebuiltVoiceConfig: { voiceName }
         }
       },
-      tools: [
-        {
-          functionDeclarations: [
-            {
-              name: "sendWhatsAppDetails",
-              description: "Sends a WhatsApp message with documentation or brochure details to the caller's phone number.",
-              parameters: {
-                type: "OBJECT",
-                properties: {
-                  detailsType: {
-                    type: "STRING",
-                    description: "The type of details requested (e.g. 'pricing', 'document', or 'brochure')."
-                  }
-                },
-                required: ["detailsType"]
-              }
-            }
-          ]
-        }
-      ],
+
       inputAudioTranscription:  {},
       outputAudioTranscription: {},
       realtimeInputConfig: {
@@ -421,40 +350,7 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
           transcriptLines.push({ role: "ai", text });
         }
 
-        // Handle AI tool/function call
-        if (response.toolCall?.functionCalls) {
-          for (const call of response.toolCall.functionCalls) {
-            if (call.name === "sendWhatsAppDetails") {
-              const detailsType = call.args?.detailsType || "document";
-              const targetNumber = getCallerNumber();
-              console.log(`📞 AI requested sendWhatsAppDetails tool for: ${targetNumber} (type: ${detailsType})`);
 
-              // Define the message content
-              let messageBody = "Hello from ChiefVoice! Here is the document you requested: https://chiefvoice-web-production.up.railway.app/brochure.pdf";
-              if (detailsType === "pricing") {
-                messageBody = "Hello from ChiefVoice! Here is the pricing details: Standard Plan starts at $49/mo. Learn more: https://chiefvoice-web-production.up.railway.app/pricing";
-              }
-
-              // Send WhatsApp message asynchronously
-              sendWhatsAppMessage(targetNumber, messageBody).then((success) => {
-                if (session.conn && session.conn.ws && session.conn.ws.readyState === 1) {
-                  session.conn.ws.send(JSON.stringify({
-                    tool_response: {
-                      function_responses: [
-                        {
-                          name: "sendWhatsAppDetails",
-                          response: { output: { status: success ? "success" : "failed" } },
-                          id: call.id
-                        }
-                      ]
-                    }
-                  }));
-                  console.log(`📤 Sent tool_response to Gemini. Success: ${success}`);
-                }
-              });
-            }
-          }
-        }
 
         // Barge-in: caller interrupted AI
         if (response.serverContent?.interrupted) {
