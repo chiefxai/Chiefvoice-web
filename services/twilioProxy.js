@@ -292,6 +292,9 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
         
         data = JSON.stringify(payload);
         console.log("⚙️ Twilio Stream: Intercepted setup payload.");
+        if (global.broadcastLog) {
+          global.broadcastLog(`📤 [Gemini Send] setup (model: gemini-2.5-flash-native-audio-latest, voice: ${voiceName})`, { type: "gemini_raw" });
+        }
       }
     } catch (_) {}
     ws.prototype.send = originalSend;
@@ -330,6 +333,29 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
       onmessage: (response) => {
         console.log("📥 Raw Gemini response:", JSON.stringify(response).slice(0, 300));
         
+        // Log the real WebSocket frame payload received from Gemini
+        if (global.broadcastLog) {
+          let eventSummary = "📥 [Gemini Receive] ";
+          if (response.serverContent?.modelTurn?.parts) {
+            const hasAudio = response.serverContent.modelTurn.parts.some(p => p.inlineData?.mimeType?.startsWith("audio/"));
+            eventSummary += `serverContent (modelTurn${hasAudio ? ' with audio payload' : ''})`;
+          } else if (response.serverContent?.inputTranscription) {
+            eventSummary += `inputTranscription (text: "${response.serverContent.inputTranscription.text}")`;
+          } else if (response.serverContent?.outputTranscription) {
+            eventSummary += `outputTranscription (text: "${response.serverContent.outputTranscription.text}")`;
+          } else if (response.serverContent?.interrupted) {
+            eventSummary += `interrupted (caller barge-in)`;
+          } else if (response.serverContent?.turnComplete) {
+            eventSummary += `turnComplete`;
+          } else if (response.usageMetadata) {
+            const u = response.usageMetadata;
+            eventSummary += `usageMetadata (promptTokens: ${u.promptTokenCount || 0}, candidatesTokens: ${u.candidatesTokenCount || 0})`;
+          } else {
+            eventSummary += Object.keys(response).join(", ");
+          }
+          global.broadcastLog(eventSummary, { type: "gemini_raw" });
+        }
+
         // Extract token usage metadata from live session
         const usage = response.usageMetadata || response.usage_metadata;
         if (usage && onTokenUsage) {
