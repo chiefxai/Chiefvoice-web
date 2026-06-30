@@ -132,6 +132,8 @@ async function handleBrowserSession(browserWs) {
 
   let liveInputTokens = 0;
   let liveOutputTokens = 0;
+  let totalInboundAudioBytes = 0;
+  let totalOutboundAudioBytes = 0;
 
   // ── Open Gemini session ───────────────────────────────────
   try {
@@ -144,6 +146,9 @@ async function handleBrowserSession(browserWs) {
       (inTokens, outTokens) => {
         liveInputTokens += inTokens;
         liveOutputTokens += outTokens;
+      },
+      (outBytes) => {
+        totalOutboundAudioBytes += outBytes;
       }
     );
     console.log(`✅ Gemini Live session open | Call ID: ${callId}`);
@@ -166,7 +171,9 @@ async function handleBrowserSession(browserWs) {
       const msg = JSON.parse(rawMsg.toString());
       if (msg.type === "audio") {
         await geminiSession.sendAudio(msg.data);
-        recordStream.write(Buffer.from(msg.data, "base64"));
+        const pcmData = Buffer.from(msg.data, "base64");
+        totalInboundAudioBytes += pcmData.length;
+        recordStream.write(pcmData);
       } else if (msg.type === "stop") {
         await finalizeCall();
         if (geminiSession) try { await geminiSession.close(); } catch {}
@@ -183,7 +190,7 @@ async function handleBrowserSession(browserWs) {
     recordStream.end();
     const duration = Math.round((Date.now() - startTime) / 1000);
     await new Promise(r => recordStream.on("finish", r));
-    processPostCallData(callId, tempPcmPath, duration, transcriptLines, activeConfig, liveInputTokens, liveOutputTokens)
+    processPostCallData(callId, tempPcmPath, duration, transcriptLines, activeConfig, liveInputTokens, liveOutputTokens, totalInboundAudioBytes, totalOutboundAudioBytes)
       .catch(err => console.error("❌ Post-call error:", err.message));
   }
 
@@ -202,7 +209,7 @@ async function handleBrowserSession(browserWs) {
 // ═══════════════════════════════════════════════════════════════
 // GEMINI LIVE SESSION — CORE VOICE QUALITY SETTINGS
 // ═══════════════════════════════════════════════════════════════
-async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStream, transcriptLines, onTokenUsage) {
+async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStream, transcriptLines, onTokenUsage, onAudioOut) {
 
   // ── Intercept WebSocket Send to Inject VAD Config ──────────
   // The @google/genai SDK ignores and strips realtimeInputConfig/VAD keys
@@ -311,6 +318,9 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
               });
               // Save resampled version to recording file
               const raw = Buffer.from(part.inlineData.data, "base64");
+              if (onAudioOut) {
+                onAudioOut(raw.length);
+              }
               recordStream.write(resample24To16(raw));
             }
           }
@@ -369,7 +379,7 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
 // ═══════════════════════════════════════════════════════════════
 // POST CALL: Upload + Sentiment + Supabase save
 // ═══════════════════════════════════════════════════════════════
-async function processPostCallData(callId, tempPcmPath, durationSeconds, transcriptLines, activeConfig, liveInputTokens, liveOutputTokens) {
+async function processPostCallData(callId, tempPcmPath, durationSeconds, transcriptLines, activeConfig, liveInputTokens, liveOutputTokens, totalInboundAudioBytes, totalOutboundAudioBytes) {
   if (!fs.existsSync(tempPcmPath)) return;
 
   const rawPcm = fs.readFileSync(tempPcmPath);
@@ -423,8 +433,19 @@ async function processPostCallData(callId, tempPcmPath, durationSeconds, transcr
   }
 
   // Combined token calculation for BOTH models
-  const totalInputTokens = liveInputTokens + sentimentInputTokens;
-  const totalOutputTokens = liveOutputTokens + sentimentOutputTokens;
+  let totalInputTokens = liveInputTokens + sentimentInputTokens;
+  let totalOutputTokens = liveOutputTokens + sentimentOutputTokens;
+
+  // Fallback if websocket usageMetadata wasn't populated (calculate based on duration/audio bytes)
+  if (totalInputTokens === 0 && totalInboundAudioBytes > 0) {
+    const inputAudioSeconds = totalInboundAudioBytes / 32000;
+    const promptBaseline = 1500 + (transcriptLines.length * 150);
+    totalInputTokens = Math.round((inputAudioSeconds * 32) + promptBaseline);
+  }
+  if (totalOutputTokens === 0 && totalOutboundAudioBytes > 0) {
+    const outputAudioSeconds = totalOutboundAudioBytes / 48000;
+    totalOutputTokens = Math.round(outputAudioSeconds * 25);
+  }
 
   // Pricing: Input: $0.075 / 1M tokens ($0.000000075 / token) | Output: $0.30 / 1M tokens ($0.0000003 / token)
   const costUsd = (totalInputTokens * 0.000000075) + (totalOutputTokens * 0.0000003);

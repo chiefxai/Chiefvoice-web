@@ -124,6 +124,8 @@ async function handleTwilioSession(twilioWs) {
 
   let liveInputTokens = 0;
   let liveOutputTokens = 0;
+  let totalInboundAudioBytes = 0;
+  let totalOutboundAudioBytes = 0;
 
   // Start connecting to Gemini asynchronously in the background
   const geminiSessionPromise = openGeminiSession(
@@ -136,6 +138,9 @@ async function handleTwilioSession(twilioWs) {
     (inTokens, outTokens) => {
       liveInputTokens += inTokens;
       liveOutputTokens += outTokens;
+    },
+    (outBytes) => {
+      totalOutboundAudioBytes += outBytes;
     },
     () => {
       geminiSetupFinished = true;
@@ -182,6 +187,7 @@ async function handleTwilioSession(twilioWs) {
 
             // 3. Send to Gemini
             await geminiSession.sendAudio(pcm16k.toString("base64"));
+            totalInboundAudioBytes += pcm16k.length;
 
             // 4. Save to recording file (downsample/resample to 16kHz for consistency)
             recordStream.write(pcm16k);
@@ -212,7 +218,7 @@ async function handleTwilioSession(twilioWs) {
     const callerNumber = twilioCallNumbers.get(callSid) || "Twilio Call";
     twilioCallNumbers.delete(callSid); // clean up
 
-    processPostCallData(callId, callerNumber, tempPcmPath, duration, transcriptLines, activeConfig, liveInputTokens, liveOutputTokens)
+    processPostCallData(callId, callerNumber, tempPcmPath, duration, transcriptLines, activeConfig, liveInputTokens, liveOutputTokens, totalInboundAudioBytes, totalOutboundAudioBytes)
       .catch(err => console.error("❌ Post-call error for Twilio:", err.message));
   }
 
@@ -231,7 +237,7 @@ async function handleTwilioSession(twilioWs) {
 
 // GEMINI LIVE SESSION
 // ═══════════════════════════════════════════════════════════════
-async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream, transcriptLines, getStreamSid, onTokenUsage, onSetupComplete) {
+async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream, transcriptLines, getStreamSid, onTokenUsage, onAudioOut, onSetupComplete) {
   const outboundQueue = [];
   let intervalId = null;
 
@@ -336,6 +342,9 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
           for (const part of response.serverContent.modelTurn.parts) {
             if (part.inlineData?.mimeType?.startsWith("audio/")) {
               const raw24kPCM = Buffer.from(part.inlineData.data, "base64");
+              if (onAudioOut) {
+                onAudioOut(raw24kPCM.length);
+              }
               
               // 1. Resample: 24kHz PCM -> 8kHz PCM
               const pcm8k = downsample24To8(raw24kPCM);
@@ -422,7 +431,7 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
 // ═══════════════════════════════════════════════════════════════
 // POST CALL DATA HANDLING
 // ═══════════════════════════════════════════════════════════════
-async function processPostCallData(callId, callerNumber, tempPcmPath, durationSeconds, transcriptLines, activeConfig, liveInputTokens, liveOutputTokens) {
+async function processPostCallData(callId, callerNumber, tempPcmPath, durationSeconds, transcriptLines, activeConfig, liveInputTokens, liveOutputTokens, totalInboundAudioBytes, totalOutboundAudioBytes) {
   if (!fs.existsSync(tempPcmPath)) return;
 
   const rawPcm = fs.readFileSync(tempPcmPath);
@@ -476,8 +485,22 @@ async function processPostCallData(callId, callerNumber, tempPcmPath, durationSe
   }
 
   // Combined token calculation for BOTH models
-  const totalInputTokens = liveInputTokens + sentimentInputTokens;
-  const totalOutputTokens = liveOutputTokens + sentimentOutputTokens;
+  let totalInputTokens = liveInputTokens + sentimentInputTokens;
+  let totalOutputTokens = liveOutputTokens + sentimentOutputTokens;
+
+  // Fallback if websocket usageMetadata wasn't populated (calculate based on duration/audio bytes)
+  if (totalInputTokens === 0 && totalInboundAudioBytes > 0) {
+    // 16kHz 16-bit PCM has 32,000 bytes per second. Audio input tokens = 32 per second.
+    // Plus baseline for systemPrompt + transcript turns history context
+    const inputAudioSeconds = totalInboundAudioBytes / 32000;
+    const promptBaseline = 1500 + (transcriptLines.length * 150);
+    totalInputTokens = Math.round((inputAudioSeconds * 32) + promptBaseline);
+  }
+  if (totalOutputTokens === 0 && totalOutboundAudioBytes > 0) {
+    // 24kHz 16-bit PCM has 48,000 bytes per second. Audio output tokens = 25 per second.
+    const outputAudioSeconds = totalOutboundAudioBytes / 48000;
+    totalOutputTokens = Math.round(outputAudioSeconds * 25);
+  }
 
   // Pricing: Input: $0.075 / 1M tokens ($0.000000075 / token) | Output: $0.30 / 1M tokens ($0.0000003 / token)
   const costUsd = (totalInputTokens * 0.000000075) + (totalOutputTokens * 0.0000003);
