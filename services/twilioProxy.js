@@ -139,7 +139,7 @@ async function handleTwilioSession(twilioWs) {
       liveInputTokens += inTokens;
       liveOutputTokens += outTokens;
       if (global.broadcastLog) {
-        global.broadcastLog("🪙 Gemini Live Tokens Consumed", { type: "usage", inputTokens: liveInputTokens, outputTokens: liveOutputTokens });
+        global.broadcastLog(`🪙 Tokens Spent: Input ${liveInputTokens} | Output ${liveOutputTokens}`, { type: "usage", inputTokens: liveInputTokens, outputTokens: liveOutputTokens });
       }
     },
     (outBytes) => {
@@ -331,10 +331,11 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
         console.log("📥 Raw Gemini response:", JSON.stringify(response).slice(0, 300));
         
         // Extract token usage metadata from live session
-        if (response.usageMetadata && onTokenUsage) {
-          const inCount = response.usageMetadata.promptTokenCount || 0;
-          const outCount = response.usageMetadata.candidatesTokenCount || 
-                           response.usageMetadata.responseTokenCount || 0;
+        const usage = response.usageMetadata || response.usage_metadata;
+        if (usage && onTokenUsage) {
+          const inCount = usage.promptTokenCount || usage.prompt_token_count || 0;
+          const outCount = usage.candidatesTokenCount || usage.candidates_token_count || 
+                           usage.responseTokenCount || usage.response_token_count || 0;
           if (inCount > 0 || outCount > 0) {
             onTokenUsage(inCount, outCount);
           }
