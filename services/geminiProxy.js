@@ -306,40 +306,6 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
 
     callbacks: {
       onmessage: (response) => {
-        // Log the real WebSocket frame payload received from Gemini
-        if (global.broadcastLog) {
-          let eventSummary = "📥 [Gemini Receive] ";
-          if (response.serverContent?.modelTurn?.parts) {
-            const hasAudio = response.serverContent.modelTurn.parts.some(p => p.inlineData?.mimeType?.startsWith("audio/"));
-            eventSummary += `serverContent (modelTurn${hasAudio ? ' with audio payload' : ''})`;
-          } else if (response.serverContent?.inputTranscription) {
-            eventSummary += `inputTranscription (text: "${response.serverContent.inputTranscription.text}")`;
-          } else if (response.serverContent?.outputTranscription) {
-            eventSummary += `outputTranscription (text: "${response.serverContent.outputTranscription.text}")`;
-          } else if (response.serverContent?.interrupted) {
-            eventSummary += `interrupted (caller barge-in)`;
-          } else if (response.serverContent?.turnComplete) {
-            eventSummary += `turnComplete`;
-          } else if (response.usageMetadata || response.serverContent?.usageMetadata) {
-            const u = response.usageMetadata || response.serverContent?.usageMetadata;
-            eventSummary += `usageMetadata (promptTokens: ${u.promptTokenCount || 0}, candidatesTokens: ${u.candidatesTokenCount || 0})`;
-          } else {
-            eventSummary += Object.keys(response).join(", ");
-          }
-          global.broadcastLog(eventSummary, { type: "gemini_raw" });
-        }
-
-        // Extract token usage metadata from live session
-        const usage = response.usageMetadata || response.usage_metadata || response.serverContent?.usageMetadata || response.serverContent?.usage_metadata;
-        if (usage && onTokenUsage) {
-          const inCount = usage.promptTokenCount || usage.prompt_token_count || 0;
-          const outCount = usage.candidatesTokenCount || usage.candidates_token_count || 
-                           usage.responseTokenCount || usage.response_token_count || 0;
-          if (inCount > 0 || outCount > 0) {
-            onTokenUsage(inCount, outCount);
-          }
-        }
-
         if (!browserWs || browserWs.readyState !== 1) return;
 
         // AI audio response
@@ -404,6 +370,50 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
       },
     },
   });
+
+  // Attach raw WebSocket packet listener to capture exact Google server frames including usageMetadata
+  if (session && session.conn && session.conn.ws) {
+    session.conn.ws.on("message", (rawFrame) => {
+      try {
+        const payload = JSON.parse(rawFrame.toString());
+        if (global.broadcastLog) {
+          let eventSummary = "📥 [Gemini Receive] ";
+          const usage = payload.usageMetadata || payload.serverContent?.usageMetadata || payload.usage_metadata || payload.serverContent?.usage_metadata;
+          
+          if (payload.serverContent?.modelTurn?.parts) {
+            const hasAudio = payload.serverContent.modelTurn.parts.some(p => p.inlineData?.mimeType?.startsWith("audio/"));
+            eventSummary += `serverContent (modelTurn${hasAudio ? ' with audio payload' : ''})`;
+          } else if (payload.serverContent?.inputTranscription) {
+            eventSummary += `inputTranscription (text: "${payload.serverContent.inputTranscription.text}")`;
+          } else if (payload.serverContent?.outputTranscription) {
+            eventSummary += `outputTranscription (text: "${payload.serverContent.outputTranscription.text}")`;
+          } else if (payload.serverContent?.interrupted) {
+            eventSummary += `interrupted (caller barge-in)`;
+          } else if (payload.serverContent?.turnComplete) {
+            eventSummary += `turnComplete`;
+          } else if (usage) {
+            eventSummary += `usageMetadata (promptTokens: ${usage.promptTokenCount || usage.prompt_token_count || 0}, candidatesTokens: ${usage.candidatesTokenCount || usage.candidates_token_count || 0})`;
+          } else {
+            eventSummary += Object.keys(payload).join(", ");
+          }
+          
+          global.broadcastLog(eventSummary, { type: "gemini_raw" });
+          
+          // Count tokens robustly
+          if (usage) {
+            const inCount = usage.promptTokenCount || usage.prompt_token_count || 0;
+            const outCount = usage.candidatesTokenCount || usage.candidates_token_count || 
+                             usage.responseTokenCount || usage.response_token_count || 0;
+            if (inCount > 0 || outCount > 0) {
+              onTokenUsage(inCount, outCount);
+            }
+          }
+        }
+      } catch (err) {
+        // Not a JSON packet
+      }
+    });
+  }
 
   return {
     sendAudio: async (base64Pcm16k) => {
