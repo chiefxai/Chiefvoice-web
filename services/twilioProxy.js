@@ -114,7 +114,19 @@ async function handleTwilioSession(twilioWs) {
       if (geminiSession) {
         try {
           console.log("👋 Triggering custom warm greeting...");
-          await geminiSession.sendText("Good morning sir! May I speak to Britto?");
+          const now = new Date();
+          const hour = new Date(now.getTime() + (now.getTimezoneOffset() + 330) * 60000).getHours();
+          let timeOfDay = "morning";
+          if (hour >= 12 && hour < 16) {
+            timeOfDay = "afternoon";
+          } else if (hour >= 16 && hour < 20) {
+            timeOfDay = "evening";
+          } else if (hour >= 20 || hour < 5) {
+            timeOfDay = "night";
+          }
+          
+          const greetingText = `Vanakkam sir/mam, ${timeOfDay}! Naanga ChiefVoice-la irundhu call panrom. Sollunga, enna assist venum, epdi help pannalam?`;
+          await geminiSession.sendText(greetingText);
         } catch (e) {
           console.error("Failed to trigger initial greeting:", e.message);
         }
