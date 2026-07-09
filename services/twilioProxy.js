@@ -739,7 +739,11 @@ async function handleSaveQuestionResponse(callId, phone, question, answer) {
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_ANON_KEY;
     if (supabaseUrl && supabaseKey) {
-      const supabase = createClient(supabaseUrl, supabaseKey);
+      const ws = require("ws");
+      const supabase = createClient(supabaseUrl, supabaseKey, {
+        auth: { persistSession: false },
+        realtime: { transport: ws }
+      });
       await supabase.from("lead_responses").insert([{
         call_id: callId,
         policyholder_phone: phone,
