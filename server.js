@@ -491,11 +491,34 @@ app.get("/api/v2/chroma/search", async (req, res) => {
     const collectionId = targetColl.id;
     const searchUrl = `${chromaUrl}/api/v2/tenants/default_tenant/databases/default_database/collections/${collectionId}/get`;
 
+    // Clean query and extract keywords
+    const stopwords = new Set(["what", "is", "the", "a", "of", "and", "in", "to", "for", "about", "how", "does", "do", "you", "have", "definition", "qualifies", "under", "policy", "wording", "plan", "insurance"]);
+    const keywords = query
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "")
+      .split(/\s+/)
+      .filter(w => w.length > 2 && !stopwords.has(w));
+
+    let filterBody = {};
+    if (keywords.length > 0) {
+      if (keywords.length === 1) {
+        filterBody = { where_document: { "$contains": keywords[0] } };
+      } else {
+        filterBody = {
+          where_document: {
+            "$or": keywords.map(kw => ({ "$contains": kw }))
+          }
+        };
+      }
+    } else {
+      filterBody = { where_document: { "$contains": query } };
+    }
+
     const chromaRes = await fetch(searchUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        where_document: { "$contains": query },
+        ...filterBody,
         limit: 3,
         include: ["documents", "metadatas"]
       })
