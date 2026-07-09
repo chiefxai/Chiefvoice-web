@@ -169,6 +169,7 @@ If the user has any policy or general insurance questions at any point during th
     finalPrompt,
     recordStream,
     transcriptLines,
+    callId,
     () => streamSid,
     (inTokens, outTokens) => {
       liveInputTokens += inTokens;
@@ -283,7 +284,7 @@ If the user has any policy or general insurance questions at any point during th
 
 // GEMINI LIVE SESSION
 // ═══════════════════════════════════════════════════════════════
-async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream, transcriptLines, getStreamSid, onTokenUsage, onAudioOut, onSetupComplete, getCallerNumber) {
+async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream, transcriptLines, callId, getStreamSid, onTokenUsage, onAudioOut, onSetupComplete, getCallerNumber) {
   const outboundQueue = [];
   let intervalId = null;
 
