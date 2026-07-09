@@ -106,10 +106,10 @@ async function handleTwilioSession(twilioWs) {
   // Fetch configured CRM questionnaire questions
   const { readAll } = require("./store");
   const defaultQuestions = [
-    "What is your full name?",
-    "What type of coverage are you looking for?",
-    "What is your budget target?",
-    "Do you have any pre-existing health conditions?"
+    "Unga full name enna, sollunga?",
+    "Ugaluku enna maadhiri insurance coverage venum?",
+    "Unga budget premium target enna?",
+    "Ugaluku edhavadhu pre-existing health conditions or medical issues iruka?"
   ];
   const questionsList = readAll("questions", defaultQuestions);
 
