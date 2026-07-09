@@ -647,12 +647,18 @@ async function handleSearchPolicyKnowledgeBase(query) {
 
     let filterBody = {};
     if (keywords.length > 0) {
-      if (keywords.length === 1) {
-        filterBody = { where_document: { "$contains": keywords[0] } };
+      const expanded = [];
+      for (const kw of keywords) {
+        expanded.push(kw.toLowerCase());
+        expanded.push(kw.charAt(0).toUpperCase() + kw.slice(1));
+        expanded.push(kw.toUpperCase());
+      }
+      if (expanded.length === 1) {
+        filterBody = { where_document: { "$contains": expanded[0] } };
       } else {
         filterBody = {
           where_document: {
-            "$or": keywords.map(kw => ({ "$contains": kw }))
+            "$or": expanded.map(kw => ({ "$contains": kw }))
           }
         };
       }
