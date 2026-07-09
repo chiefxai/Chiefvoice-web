@@ -229,9 +229,19 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
     try {
       const payload = JSON.parse(data);
       if (payload.setup) {
-        // Delete camelCase VAD and compression configurations to prevent Google's backend from throwing "Request contains an invalid argument"
-        delete payload.setup.realtimeInputConfig;
+        // Delete contextWindowCompression to prevent invalid argument error
         delete payload.setup.contextWindowCompression;
+
+        // Translate and inject snake_case VAD settings for the Live API backend
+        payload.setup.realtime_input_config = {
+          automatic_activity_detection: {
+            disabled: false,
+            start_of_speech_sensitivity: "START_SENSITIVITY_HIGH",
+            end_of_speech_sensitivity: "END_SENSITIVITY_HIGH",
+            silence_duration_ms: 600
+          }
+        };
+        delete payload.setup.realtimeInputConfig;
 
         // Set temperature inside the existing generationConfig
         if (!payload.setup.generationConfig) {
@@ -240,7 +250,7 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
         payload.setup.generationConfig.temperature = 0.9;
         
         data = JSON.stringify(payload);
-        console.log("⚙️ Intercepted setup payload, safely removed VAD/Compression, and set temperature: 0.9.");
+        console.log("⚙️ Intercepted setup payload, injected snake_case VAD config (silence: 600ms, sensitivity: HIGH), and set temperature: 0.9.");
         if (global.broadcastLog) {
           global.broadcastLog(`📤 [Gemini Send] setup (model: gemini-2.5-flash-native-audio-latest, voice: ${voiceName})`, { type: "gemini_raw" });
         }
