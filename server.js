@@ -665,7 +665,7 @@ async function seedChromaDB() {
 
       const fs = require("fs");
       const path = require("path");
-      const seedPath = path.join(__dirname, "data/policy_documents_seed.json");
+      const seedPath = path.join(__dirname, "policy_documents_seed.json");
       if (fs.existsSync(seedPath)) {
         const seedData = JSON.parse(fs.readFileSync(seedPath, "utf8"));
         console.log(`📤 Seeding ${seedData.ids.length} chunks into target Chroma DB...`);
