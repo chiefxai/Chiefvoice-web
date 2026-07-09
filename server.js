@@ -632,6 +632,69 @@ server.on("upgrade", (request, socket, head) => {
   }
 });
 
+// ── Seed Chroma DB ──
+async function seedChromaDB() {
+  try {
+    const chromaUrl = process.env.CHROMA_URL || "https://chroma-corechroma-production-1118.up.railway.app";
+    console.log(`🤖 Checking Chroma DB collection seeding at: ${chromaUrl}`);
+    const collectionsRes = await fetch(`${chromaUrl}/api/v2/tenants/default_tenant/databases/default_database/collections`);
+    if (!collectionsRes.ok) {
+      console.warn("⚠️ Failed to check Chroma DB collections list");
+      return;
+    }
+    const collections = await collectionsRes.json();
+    const hasCollection = collections.some(c => c.name === "policy-documents");
+
+    if (!hasCollection) {
+      console.log(`📥 "policy-documents" collection not found on target Chroma. Seeding from local file...`);
+      const createRes = await fetch(`${chromaUrl}/api/v2/tenants/default_tenant/databases/default_database/collections`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "policy-documents",
+          metadata: { description: "Health Insurance Policy Documents" },
+          get_or_create: true
+        })
+      });
+      if (!createRes.ok) {
+        console.error("❌ Failed to create collection on target Chroma DB:", await createRes.text());
+        return;
+      }
+      const targetCollection = await createRes.json();
+      const newCollectionId = targetCollection.id;
+
+      const fs = require("fs");
+      const path = require("path");
+      const seedPath = path.join(__dirname, "data/policy_documents_seed.json");
+      if (fs.existsSync(seedPath)) {
+        const seedData = JSON.parse(fs.readFileSync(seedPath, "utf8"));
+        console.log(`📤 Seeding ${seedData.ids.length} chunks into target Chroma DB...`);
+        const addRes = await fetch(`${chromaUrl}/api/v2/tenants/default_tenant/databases/default_database/collections/${newCollectionId}/add`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ids: seedData.ids,
+            embeddings: seedData.embeddings,
+            metadatas: seedData.metadatas,
+            documents: seedData.documents
+          })
+        });
+        if (addRes.ok) {
+          console.log("🎉 Chroma DB seeded successfully with policy documents!");
+        } else {
+          console.error("❌ Failed to seed Chroma DB:", await addRes.text());
+        }
+      } else {
+        console.warn("⚠️ Local Chroma DB seed file data/policy_documents_seed.json not found!");
+      }
+    } else {
+      console.log(`✅ Chroma DB "policy-documents" collection already exists. Skipping seed.`);
+    }
+  } catch (err) {
+    console.error("❌ Error checking/seeding Chroma DB:", err.message);
+  }
+}
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, "0.0.0.0", () => {
   const publicUrl =
@@ -645,4 +708,7 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`📱 Open on mobile: ${publicUrl}`);
   console.log(`🎙️  Browser WebSocket path: /session`);
   console.log(`📞 Twilio Stream WebSocket path: /twilio/stream\n`);
+
+  // Run dynamic Chroma DB seeding
+  seedChromaDB();
 });
