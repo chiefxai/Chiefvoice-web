@@ -643,7 +643,7 @@ async function seedChromaDB() {
       return;
     }
     const collections = await collectionsRes.json();
-    const targetColl = collections.find(c => c.name === "policy-documents");
+    let targetColl = collections.find(c => c.name === "policy-documents");
     let needsSeed = !targetColl;
     let newCollectionId = targetColl?.id;
 
@@ -652,13 +652,25 @@ async function seedChromaDB() {
         const countRes = await fetch(`${chromaUrl}/api/v2/tenants/default_tenant/databases/default_database/collections/${targetColl.id}/count`);
         if (countRes.ok) {
           const count = await countRes.json();
-          if (count === 0) {
-            console.log(`📥 "policy-documents" collection is empty on target Chroma DB. Seeding...`);
+          const fs = require("fs");
+          const path = require("path");
+          const seedPath = path.join(__dirname, "policy_documents_seed.json");
+          let seedCount = 0;
+          if (fs.existsSync(seedPath)) {
+            const seedData = JSON.parse(fs.readFileSync(seedPath, "utf8"));
+            seedCount = seedData.ids.length;
+          }
+          if (count === 0 || count !== seedCount) {
+            console.log(`📥 Document count mismatch (DB: ${count}, Local Seed: ${seedCount}). Resetting and re-seeding...`);
+            await fetch(`${chromaUrl}/api/v2/tenants/default_tenant/databases/default_database/collections/${targetColl.name}`, {
+              method: "DELETE"
+            });
             needsSeed = true;
+            targetColl = null; // force recreate
           }
         }
       } catch (err) {
-        console.warn("⚠️ Failed to query collection document count:", err.message);
+        console.warn("⚠️ Failed to query/re-seed collection document count:", err.message);
       }
     }
 
