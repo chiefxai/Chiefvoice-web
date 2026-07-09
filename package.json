@@ -12,6 +12,7 @@
     "@google/genai": "^0.7.0",
     "@supabase/supabase-js": "^2.108.2",
     "alawmulaw": "^6.0.0",
+    "chromadb": "^1.9.4",
     "cors": "^2.8.6",
     "dotenv": "^16.4.0",
     "express": "^4.18.2",
