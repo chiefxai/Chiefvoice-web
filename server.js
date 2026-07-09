@@ -156,9 +156,14 @@ app.post("/api/twilio/call", async (req, res) => {
 
   try {
     const authString = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
-    const protocol = req.secure || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
-    const host = req.headers.host;
-    const callbackUrl = `${protocol}://${host}/api/twilio/incoming`;
+    let callbackUrl;
+    if (process.env.PUBLIC_URL) {
+      callbackUrl = `${process.env.PUBLIC_URL}/api/twilio/incoming`;
+    } else {
+      const protocol = req.secure || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+      const host = req.headers.host;
+      callbackUrl = `${protocol}://${host}/api/twilio/incoming`;
+    }
 
     console.log(`📞 Triggering Twilio outbound call to ${phoneNumber} from ${twilioNumber}...`);
 
