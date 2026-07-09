@@ -7,22 +7,22 @@ import {
 import { shop } from "../lib/mockData";
 
 const nav = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/orders", label: "Orders", icon: ListOrdered },
-  { to: "/catalog", label: "Catalog / Inventory", icon: Package },
-  { to: "/customers", label: "Customers", icon: Users },
-  { to: "/khata", label: "Credit / Khata", icon: Wallet },
-  { to: "/delivery", label: "Delivery", icon: Truck },
-  { to: "/broadcast", label: "WhatsApp Broadcast", icon: Megaphone },
+  { to: "/", label: "CRM Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/orders", label: "Quotes & Policies", icon: ListOrdered },
+  { to: "/catalog", label: "Insurance Products", icon: Package },
+  { to: "/customers", label: "Policyholders", icon: Users },
+  { to: "/khata", label: "Premium Payments", icon: Wallet },
+  { to: "/delivery", label: "Claims Processing", icon: Truck },
+  { to: "/broadcast", label: "Renewal Broadcast", icon: Megaphone },
   { to: "/ai-agent", label: "AI Agent Config", icon: Bot },
-  { to: "/pricing", label: "Pricing & Offers", icon: Tag },
-  { to: "/suppliers", label: "Suppliers", icon: Boxes },
+  { to: "/pricing", label: "Premium Calculator", icon: Tag },
+  { to: "/suppliers", label: "Brokers & Agents", icon: Boxes },
   { to: "/staff", label: "Staff & Roles", icon: UserCog },
-  { to: "/analytics", label: "Analytics", icon: BarChart3 },
-  { to: "/billing", label: "Billing / GST", icon: FileText },
-  { to: "/payments", label: "Payments Reconciliation", icon: Landmark },
+  { to: "/analytics", label: "Risk Analytics", icon: BarChart3 },
+  { to: "/billing", label: "Premium Invoices", icon: FileText },
+  { to: "/payments", label: "Reconciliation", icon: Landmark },
   { to: "/settings", label: "Settings", icon: Settings },
-  { to: "/subscription", label: "Subscription", icon: CreditCard },
+  { to: "/subscription", label: "Licensing & Plans", icon: CreditCard },
 ];
 
 const API_BASE = window.location.origin;
@@ -77,7 +77,7 @@ export default function AppShell() {
             <Phone size={18} className="text-white" />
           </div>
           <div>
-            <div className="font-semibold text-[15px] leading-tight">VoxAI Kirana</div>
+            <div className="font-semibold text-[15px] leading-tight">VoxAI Insurance CRM</div>
             <div className="text-xs text-[var(--color-muted)] leading-tight">{shop.name}</div>
           </div>
         </div>

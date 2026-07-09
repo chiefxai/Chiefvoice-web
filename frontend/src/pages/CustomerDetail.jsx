@@ -44,18 +44,18 @@ export default function CustomerDetail() {
   }, [id]);
 
   if (loading) {
-    return <div className="text-center py-12 text-sm text-[var(--color-muted)]">Loading customer profiles...</div>;
+    return <div className="text-center py-12 text-sm text-[var(--color-muted)]">Loading policyholder profile...</div>;
   }
 
   if (!customer) {
-    return <div className="text-center py-12 text-sm text-red-500">Customer not found</div>;
+    return <div className="text-center py-12 text-sm text-red-500">Policyholder profile not found</div>;
   }
 
   return (
     <div>
       <div className="px-8 pt-8">
         <Link to="/customers" className="text-sm text-[var(--color-muted)] flex items-center gap-1 mb-3">
-          <ArrowLeft size={14} /> Back to Customers
+          <ArrowLeft size={14} /> Back to Policyholders
         </Link>
       </div>
       <PageHeader
@@ -68,14 +68,14 @@ export default function CustomerDetail() {
             className="flex items-center gap-2 bg-[var(--color-indigo)] hover:opacity-90 disabled:bg-gray-300 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-all cursor-pointer shadow-sm disabled:cursor-not-allowed"
           >
             <PhoneCall size={15} />
-            {activeCall?.phone === customer.phone ? 'Calling...' : 'Call Customer'}
+            {activeCall?.phone === customer.phone ? 'Calling...' : 'Call Policyholder'}
           </button>
         }
       />
       <div className="px-8 grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2 space-y-5">
           <div className="card p-5">
-            <h3 className="font-semibold text-[15px] mb-3">Order History</h3>
+            <h3 className="font-semibold text-[15px] mb-3">Policy & Quote History</h3>
             <table className="w-full text-sm">
               <tbody>
                 {history.length ? history.map((o) => (
@@ -84,7 +84,7 @@ export default function CustomerDetail() {
                     <td className="py-2.5 text-[var(--color-muted)]">{o.time}</td>
                     <td className="py-2.5 text-right font-medium">{inr(o.total)}</td>
                   </tr>
-                )) : <tr><td className="py-3 text-[var(--color-muted)]">No orders yet.</td></tr>}
+                )) : <tr><td className="py-3 text-[var(--color-muted)]">No policies or quotes yet.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -97,22 +97,22 @@ export default function CustomerDetail() {
             </p>
           </div>
           <div className="card p-5">
-            <h3 className="font-semibold text-[15px] mb-3">Staff Notes</h3>
-            <textarea className="w-full text-sm border border-[var(--color-border)] rounded-xl p-3 outline-none focus:border-[var(--color-trust)] bg-white" rows={3} placeholder="e.g. Prefers Aachi brand, calls in Tamil only" />
+            <h3 className="font-semibold text-[15px] mb-3">Underwriter Notes</h3>
+            <textarea className="w-full text-sm border border-[var(--color-border)] rounded-xl p-3 outline-none focus:border-[var(--color-trust)] bg-white" rows={3} placeholder="e.g. Prefers life insurance products, calls in Tamil/Tanglish" />
           </div>
         </div>
         <div className="space-y-5">
           <div className="card p-5">
-            <div className="text-xs text-[var(--color-muted)]">Lifetime Value</div>
+            <div className="text-xs text-[var(--color-muted)]">Total Premiums Paid</div>
             <div className="text-2xl font-semibold mt-1">{inr(customer.ltv)}</div>
           </div>
           <div className="card p-5">
-            <div className="text-xs text-[var(--color-muted)]">Outstanding Khata Balance</div>
+            <div className="text-xs text-[var(--color-muted)]">Outstanding Premium Due</div>
             <div className={`text-2xl font-semibold mt-1 ${customer.khata > 0 ? "text-[var(--color-danger)]" : ""}`}>{inr(customer.khata)}</div>
-            <button className="mt-3 w-full bg-[var(--color-trust)] text-white text-sm font-medium py-2 rounded-xl">Record Payment</button>
+            <button className="mt-3 w-full bg-[var(--color-trust)] text-white text-sm font-medium py-2 rounded-xl">Record Premium Payment</button>
           </div>
           <div className="card p-5">
-            <div className="text-xs text-[var(--color-muted)] mb-2">Customer Type</div>
+            <div className="text-xs text-[var(--color-muted)] mb-2">Policyholder Type</div>
             <span className="text-xs px-2 py-1 rounded-full bg-[var(--color-saffron-light)] text-amber-800">{customer.type}</span>
           </div>
         </div>

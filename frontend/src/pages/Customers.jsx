@@ -73,14 +73,14 @@ export default function Customers() {
   return (
     <div>
       <PageHeader 
-        title="Customers" 
-        subtitle="Everyone who has called, WhatsApp'd, or ordered from the shop"
+        title="Policyholders" 
+        subtitle="Everyone who has active coverage, quote requests, or leads history"
         action={
           <button 
             onClick={() => setIsModalOpen(true)}
             className="flex items-center gap-1.5 bg-[var(--color-trust)] text-white text-sm font-medium px-4 py-2.5 rounded-xl hover:opacity-90 transition-all cursor-pointer shadow-sm"
           >
-            <Plus size={16} /> Add Customer
+            <Plus size={16} /> Add Policyholder
           </button>
         }
       />
@@ -102,11 +102,11 @@ export default function Customers() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-[var(--color-muted)] border-b border-[var(--color-border)]">
-                  <th className="px-4 py-3 font-medium">Customer</th>
+                  <th className="px-4 py-3 font-medium">Policyholder</th>
                   <th className="px-4 py-3 font-medium">Type</th>
-                  <th className="px-4 py-3 font-medium">Locality</th>
-                  <th className="px-4 py-3 font-medium">Lifetime Value</th>
-                  <th className="px-4 py-3 font-medium">Khata Balance</th>
+                  <th className="px-4 py-3 font-medium">Locality / Address</th>
+                  <th className="px-4 py-3 font-medium">Total Premiums Paid</th>
+                  <th className="px-4 py-3 font-medium">Outstanding Premium</th>
                 </tr>
               </thead>
               <tbody>
@@ -117,7 +117,7 @@ export default function Customers() {
                       <div className="text-xs text-[var(--color-muted)]">{c.phone}</div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${c.type === "Wholesale" ? "bg-[var(--color-saffron-light)] text-amber-800" : "bg-gray-100 text-gray-700"}`}>{c.type}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${c.type === "Corporate" ? "bg-[var(--color-saffron-light)] text-amber-800" : "bg-gray-100 text-gray-700"}`}>{c.type}</span>
                     </td>
                     <td className="px-4 py-3 text-[var(--color-muted)]">{c.locality}</td>
                     <td className="px-4 py-3 font-medium">{inr(c.ltv)}</td>
@@ -126,7 +126,7 @@ export default function Customers() {
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-[var(--color-muted)]">No customers found.</td>
+                    <td colSpan={5} className="px-4 py-8 text-center text-[var(--color-muted)]">No policyholders found.</td>
                   </tr>
                 )}
               </tbody>
@@ -145,7 +145,7 @@ export default function Customers() {
             >
               <X size={18} />
             </button>
-            <h3 className="font-semibold text-lg text-[var(--color-ink)] mb-4">Add New Customer</h3>
+            <h3 className="font-semibold text-lg text-[var(--color-ink)] mb-4">Add New Policyholder</h3>
             
             <form onSubmit={handleAddCustomer} className="space-y-4">
               <div>
@@ -184,27 +184,27 @@ export default function Customers() {
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-[var(--color-muted)] block mb-1">Customer Type</label>
+                <label className="text-xs font-semibold text-[var(--color-muted)] block mb-1">Policyholder Type</label>
                 <div className="flex gap-4 mt-1.5">
                   <label className="flex items-center gap-1.5 text-sm cursor-pointer">
                     <input 
                       type="radio" 
-                      value="Retail" 
-                      checked={type === "Retail"} 
-                      onChange={() => setType("Retail")}
+                      value="Individual" 
+                      checked={type === "Individual"} 
+                      onChange={() => setType("Individual")}
                       className="accent-[var(--color-trust)]"
                     />
-                    Retail
+                    Individual
                   </label>
                   <label className="flex items-center gap-1.5 text-sm cursor-pointer">
                     <input 
                       type="radio" 
-                      value="Wholesale" 
-                      checked={type === "Wholesale"} 
-                      onChange={() => setType("Wholesale")}
+                      value="Corporate" 
+                      checked={type === "Corporate"} 
+                      onChange={() => setType("Corporate")}
                       className="accent-[var(--color-trust)]"
                     />
-                    Wholesale
+                    Corporate
                   </label>
                 </div>
               </div>

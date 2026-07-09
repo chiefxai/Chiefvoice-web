@@ -81,10 +81,10 @@ export default function Dashboard() {
 
   return (
     <div>
-      <PageHeader title="Dashboard" subtitle="Live overview — today, Sri Lakshmi Stores" />
+      <PageHeader title="SureShield CRM Dashboard" subtitle="Live overview — today, SureShield Insurance Group" />
       <div className="px-8 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        {stat("Today's Revenue", inr(metrics.todayRevenue || 0), <IndianRupee size={18} color="#16A34A" />, "#16A34A")}
-        {stat("Orders Today", metrics.totalOrders || "0", <PhoneCall size={18} color="#5B5BD6" />, "#5B5BD6")}
+        {stat("Premiums Collected Today", inr(metrics.todayRevenue || 0), <IndianRupee size={18} color="#16A34A" />, "#16A34A")}
+        {stat("Quotes Processed", metrics.totalOrders || "0", <PhoneCall size={18} color="#5B5BD6" />, "#5B5BD6")}
         {stat("AI Calls Handled", metrics.totalCalls || "0", <PhoneCall size={18} color="#F59E0B" />, "#F59E0B")}
         {stat("Active Calls", metrics.activeSessions || "0", <MessageCircle size={18} color="#16A34A" />, "#16A34A")}
       </div>
@@ -92,7 +92,7 @@ export default function Dashboard() {
       <div className="px-8 mt-6 grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2 card p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-[15px]">Live Order Feed</h3>
+            <h3 className="font-semibold text-[15px]">Recent Quote Activity Feed</h3>
             <Link to="/orders" className="text-xs text-[var(--color-trust)] font-medium">View all →</Link>
           </div>
           <div className="space-y-3">
@@ -109,7 +109,7 @@ export default function Dashboard() {
               </Link>
             ))}
             {orders.length === 0 && (
-              <div className="text-center text-sm py-8 text-[var(--color-muted)]">No orders placed today.</div>
+              <div className="text-center text-sm py-8 text-[var(--color-muted)]">No quote actions processed today.</div>
             )}
           </div>
         </div>
@@ -117,7 +117,7 @@ export default function Dashboard() {
         <div className="card p-5">
           <div className="flex items-center gap-2 mb-1">
             <Waveform />
-            <h3 className="font-semibold text-[15px]">Live Voice Agent</h3>
+            <h3 className="font-semibold text-[15px]">Live AI Voice Underwriter</h3>
           </div>
           {metrics.activeSessions > 0 ? (
             <div className="mt-3 bg-[var(--color-indigo-light)] rounded-xl p-4 animate-pulse">
@@ -133,17 +133,17 @@ export default function Dashboard() {
           )}
 
           <h3 className="font-semibold text-[15px] mt-6 mb-3 flex items-center gap-2">
-            <AlertTriangle size={16} className="text-[var(--color-saffron)]" /> Low Stock Alerts
+            <AlertTriangle size={16} className="text-[var(--color-saffron)]" /> Policy Lapse Warning Alerts
           </h3>
           <div className="space-y-2">
             {lowStock.slice(0, 5).map((p) => (
               <div key={p.id} className="flex items-center justify-between text-sm">
                 <span>{p.name} <span className="text-[var(--color-muted)]">({p.brand})</span></span>
-                <span className="text-[var(--color-danger)] font-medium">{p.stock} {p.unit} left</span>
+                <span className="text-[var(--color-danger)] font-medium">{p.stock} remaining</span>
               </div>
             ))}
             {lowStock.length === 0 && (
-              <div className="text-xs text-[var(--color-muted)] italic">All items are sufficiently stocked.</div>
+              <div className="text-xs text-[var(--color-muted)] italic">All policies are fully paid and active.</div>
             )}
           </div>
         </div>
@@ -157,15 +157,15 @@ export default function Dashboard() {
       <div className="px-8 mt-6 mb-8 grid grid-cols-3 gap-5">
         <div className="card p-5 text-center">
           <div className="text-3xl font-semibold text-[var(--color-trust)]">{metrics.callSuccessRate}%</div>
-          <div className="text-xs text-[var(--color-muted)] mt-1">AI Call Success Rate</div>
+          <div className="text-xs text-[var(--color-muted)] mt-1">AI Underwriter Success Rate</div>
         </div>
         <div className="card p-5 text-center">
           <div className="text-3xl font-semibold">{inr(metrics.avgOrderValue)}</div>
-          <div className="text-xs text-[var(--color-muted)] mt-1">Average Order Value</div>
+          <div className="text-xs text-[var(--color-muted)] mt-1">Average Policy Premium Value</div>
         </div>
         <div className="card p-5 text-center">
           <div className="text-3xl font-semibold">{metrics.repeatRate}%</div>
-          <div className="text-xs text-[var(--color-muted)] mt-1">Repeat Order Rate</div>
+          <div className="text-xs text-[var(--color-muted)] mt-1">Policy Renewal Success Rate</div>
         </div>
       </div>
     </div>

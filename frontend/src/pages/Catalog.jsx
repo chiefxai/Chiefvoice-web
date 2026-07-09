@@ -81,14 +81,14 @@ export default function Catalog() {
   return (
     <div>
       <PageHeader
-        title="Catalog / Inventory"
-        subtitle="Products the AI matches against during calls — keep stock accurate to avoid overselling"
+        title="Insurance Products & Plans"
+        subtitle="Insurance plans the AI matches against during calls — keep details accurate to ensure valid quotes"
         action={
           <button 
             onClick={() => setIsModalOpen(true)}
             className="bg-[var(--color-trust)] text-white text-sm font-medium px-4 py-2.5 rounded-xl flex items-center gap-2 hover:opacity-90 transition-all cursor-pointer shadow-sm"
           >
-            <Plus size={16} /> Add Product
+            <Plus size={16} /> Add Product / Plan
           </button>
         }
       />
@@ -98,23 +98,23 @@ export default function Catalog() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search products"
+            placeholder="Search plans"
             className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-[var(--color-border)] bg-white outline-none focus:border-[var(--color-trust)]"
           />
         </div>
 
         {loading ? (
-          <div className="text-center py-8 text-sm text-[var(--color-muted)]">Loading catalog...</div>
+          <div className="text-center py-8 text-sm text-[var(--color-muted)]">Loading products...</div>
         ) : (
           <div className="card overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-[var(--color-muted)] border-b border-[var(--color-border)]">
-                  <th className="px-4 py-3 font-medium">Product</th>
-                  <th className="px-4 py-3 font-medium">Category</th>
-                  <th className="px-4 py-3 font-medium">Unit</th>
-                  <th className="px-4 py-3 font-medium">Price</th>
-                  <th className="px-4 py-3 font-medium">Stock</th>
+                  <th className="px-4 py-3 font-medium">Insurance Product / Plan</th>
+                  <th className="px-4 py-3 font-medium">Coverage Category</th>
+                  <th className="px-4 py-3 font-medium">Frequency</th>
+                  <th className="px-4 py-3 font-medium">Premium Amount</th>
+                  <th className="px-4 py-3 font-medium">Active Policies</th>
                   <th className="px-4 py-3 font-medium"></th>
                 </tr>
               </thead>
@@ -123,15 +123,15 @@ export default function Catalog() {
                   <tr key={p.id} className="border-b border-[var(--color-border)] last:border-0 hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <div className="font-medium">{p.name}</div>
-                      <div className="text-xs text-[var(--color-muted)]">{p.brand || "Local"}</div>
+                      <div className="text-xs text-[var(--color-muted)]">{p.brand || "Standard"}</div>
                     </td>
-                    <td className="px-4 py-3 text-[var(--color-muted)]">{p.category || "Grocery"}</td>
+                    <td className="px-4 py-3 text-[var(--color-muted)]">{p.category || p.brand || "General"}</td>
                     <td className="px-4 py-3 text-[var(--color-muted)]">{p.unit}</td>
                     <td className="px-4 py-3 font-medium">{inr(p.price)}</td>
                     <td className="px-4 py-3">
                       <span className={p.stock < 15 ? "text-[var(--color-danger)] font-medium flex items-center gap-1" : ""}>
                         {p.stock < 15 && <AlertTriangle size={13} />}
-                        {p.stock} {p.unit}
+                        {p.stock} {p.unit}s active
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -141,7 +141,7 @@ export default function Catalog() {
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-[var(--color-muted)]">No products found.</td>
+                    <td colSpan={6} className="px-4 py-8 text-center text-[var(--color-muted)]">No plans found.</td>
                   </tr>
                 )}
               </tbody>
@@ -160,59 +160,58 @@ export default function Catalog() {
             >
               <X size={18} />
             </button>
-            <h3 className="font-semibold text-lg text-[var(--color-ink)] mb-4">Add New Product</h3>
+            <h3 className="font-semibold text-lg text-[var(--color-ink)] mb-4">Add New Plan</h3>
             
             <form onSubmit={handleAddProduct} className="space-y-4">
               <div>
-                <label className="text-xs font-semibold text-[var(--color-muted)] block mb-1">Product Name</label>
+                <label className="text-xs font-semibold text-[var(--color-muted)] block mb-1">Plan Name</label>
                 <input 
                   type="text" 
                   value={name} 
                   onChange={(e) => setName(e.target.value)} 
                   required
-                  placeholder="e.g. Toor Dal" 
+                  placeholder="e.g. Family Health Shield Pro" 
                   className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-lg outline-none focus:border-[var(--color-trust)] bg-white"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-[var(--color-muted)] block mb-1">Brand</label>
+                <label className="text-xs font-semibold text-[var(--color-muted)] block mb-1">Coverage Category</label>
                 <input 
                   type="text" 
                   value={brand} 
                   onChange={(e) => setBrand(e.target.value)} 
-                  placeholder="e.g. Tata Sampann" 
+                  placeholder="e.g. Health Insurance" 
                   className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-lg outline-none focus:border-[var(--color-trust)] bg-white"
                 />
               </div>
 
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-1">
-                  <label className="text-xs font-semibold text-[var(--color-muted)] block mb-1">Unit</label>
+                  <label className="text-xs font-semibold text-[var(--color-muted)] block mb-1">Frequency</label>
                   <select 
                     value={unit} 
                     onChange={(e) => setUnit(e.target.value)} 
                     className="w-full px-2 py-2 text-sm border border-[var(--color-border)] rounded-lg outline-none focus:border-[var(--color-trust)] bg-white"
                   >
-                    <option value="kg">kg</option>
-                    <option value="litre">litre</option>
-                    <option value="packet">packet</option>
-                    <option value="dozen">dozen</option>
+                    <option value="policy">policy</option>
+                    <option value="monthly">monthly</option>
+                    <option value="annual">annual</option>
                   </select>
                 </div>
                 <div className="col-span-1">
-                  <label className="text-xs font-semibold text-[var(--color-muted)] block mb-1">Price (₹)</label>
+                  <label className="text-xs font-semibold text-[var(--color-muted)] block mb-1">Premium (₹)</label>
                   <input 
                     type="number" 
                     value={price} 
                     onChange={(e) => setPrice(e.target.value)} 
                     required
-                    placeholder="50" 
+                    placeholder="1200" 
                     className="w-full px-3 py-2 text-sm border border-[var(--color-border)] rounded-lg outline-none focus:border-[var(--color-trust)] bg-white"
                   />
                 </div>
                 <div className="col-span-1">
-                  <label className="text-xs font-semibold text-[var(--color-muted)] block mb-1">Stock</label>
+                  <label className="text-xs font-semibold text-[var(--color-muted)] block mb-1">Active Policies</label>
                   <input 
                     type="number" 
                     value={stock} 

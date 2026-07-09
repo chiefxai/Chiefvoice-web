@@ -7,7 +7,7 @@ import { orders as mockOrders } from "../lib/mockData";
 import { inr } from "../lib/format";
 
 const API_BASE = window.location.origin;
-const tabs = ["All", "Placed", "Confirmed", "Packing", "Out for Delivery", "Delivered", "Cancelled"];
+const tabs = ["All", "Quote Generated", "Underwriting", "Confirmed", "Active", "Pending Payment", "Lapsed"];
 
 export default function Orders() {
   const [orders, setOrders] = useState([]);
@@ -44,11 +44,11 @@ export default function Orders() {
   return (
     <div>
       <PageHeader
-        title="Orders"
-        subtitle="All orders from AI Call, WhatsApp, and manual entry"
+        title="Quotes & Policies"
+        subtitle="All policies from AI Call, WhatsApp, and manual entry"
         action={
           <button className="bg-[var(--color-trust)] text-white text-sm font-medium px-4 py-2.5 rounded-xl flex items-center gap-2 hover:opacity-90 cursor-pointer">
-            <Plus size={16} /> New Manual Order
+            <Plus size={16} /> New Policy / Quote
           </button>
         }
       />
@@ -68,7 +68,7 @@ export default function Orders() {
         </div>
 
         {loading ? (
-          <div className="text-center py-8 text-sm text-[var(--color-muted)]">Loading orders...</div>
+          <div className="text-center py-8 text-sm text-[var(--color-muted)]">Loading policies...</div>
         ) : (
           <div className="card overflow-hidden">
             <div className="p-4 border-b border-[var(--color-border)]">
@@ -77,7 +77,7 @@ export default function Orders() {
                 <input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder="Search by order ID or customer"
+                  placeholder="Search by policy ID or customer"
                   className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-[var(--color-border)] outline-none focus:border-[var(--color-trust)] bg-white"
                 />
               </div>
@@ -85,10 +85,10 @@ export default function Orders() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-[var(--color-muted)] border-b border-[var(--color-border)]">
-                  <th className="px-4 py-3 font-medium">Order</th>
-                  <th className="px-4 py-3 font-medium">Customer</th>
-                  <th className="px-4 py-3 font-medium">Items</th>
-                  <th className="px-4 py-3 font-medium">Total</th>
+                  <th className="px-4 py-3 font-medium">Policy / Quote</th>
+                  <th className="px-4 py-3 font-medium">Policyholder</th>
+                  <th className="px-4 py-3 font-medium">Plan Coverage</th>
+                  <th className="px-4 py-3 font-medium">Premium Total</th>
                   <th className="px-4 py-3 font-medium">Source</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                 </tr>
