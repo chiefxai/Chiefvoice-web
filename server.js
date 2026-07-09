@@ -643,25 +643,44 @@ async function seedChromaDB() {
       return;
     }
     const collections = await collectionsRes.json();
-    const hasCollection = collections.some(c => c.name === "policy-documents");
+    const targetColl = collections.find(c => c.name === "policy-documents");
+    let needsSeed = !targetColl;
+    let newCollectionId = targetColl?.id;
 
-    if (!hasCollection) {
-      console.log(`📥 "policy-documents" collection not found on target Chroma. Seeding from local file...`);
-      const createRes = await fetch(`${chromaUrl}/api/v2/tenants/default_tenant/databases/default_database/collections`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: "policy-documents",
-          metadata: { description: "Health Insurance Policy Documents" },
-          get_or_create: true
-        })
-      });
-      if (!createRes.ok) {
-        console.error("❌ Failed to create collection on target Chroma DB:", await createRes.text());
-        return;
+    if (targetColl) {
+      try {
+        const countRes = await fetch(`${chromaUrl}/api/v2/tenants/default_tenant/databases/default_database/collections/${targetColl.id}/count`);
+        if (countRes.ok) {
+          const count = await countRes.json();
+          if (count === 0) {
+            console.log(`📥 "policy-documents" collection is empty on target Chroma DB. Seeding...`);
+            needsSeed = true;
+          }
+        }
+      } catch (err) {
+        console.warn("⚠️ Failed to query collection document count:", err.message);
       }
-      const targetCollection = await createRes.json();
-      const newCollectionId = targetCollection.id;
+    }
+
+    if (needsSeed) {
+      if (!targetColl) {
+        console.log(`📥 "policy-documents" collection not found on target Chroma. Creating...`);
+        const createRes = await fetch(`${chromaUrl}/api/v2/tenants/default_tenant/databases/default_database/collections`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: "policy-documents",
+            metadata: { description: "Health Insurance Policy Documents" },
+            get_or_create: true
+          })
+        });
+        if (!createRes.ok) {
+          console.error("❌ Failed to create collection on target Chroma DB:", await createRes.text());
+          return;
+        }
+        const targetCollection = await createRes.json();
+        newCollectionId = targetCollection.id;
+      }
 
       const fs = require("fs");
       const path = require("path");
@@ -669,12 +688,13 @@ async function seedChromaDB() {
       if (fs.existsSync(seedPath)) {
         const seedData = JSON.parse(fs.readFileSync(seedPath, "utf8"));
         console.log(`📤 Seeding ${seedData.ids.length} chunks into target Chroma DB...`);
+        const mockEmbeddings = new Array(seedData.ids.length).fill(null).map(() => new Array(384).fill(0.0));
         const addRes = await fetch(`${chromaUrl}/api/v2/tenants/default_tenant/databases/default_database/collections/${newCollectionId}/add`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ids: seedData.ids,
-            embeddings: seedData.embeddings,
+            embeddings: mockEmbeddings,
             metadatas: seedData.metadatas,
             documents: seedData.documents
           })
@@ -685,10 +705,10 @@ async function seedChromaDB() {
           console.error("❌ Failed to seed Chroma DB:", await addRes.text());
         }
       } else {
-        console.warn("⚠️ Local Chroma DB seed file data/policy_documents_seed.json not found!");
+        console.warn("⚠️ Local Chroma DB seed file policy_documents_seed.json not found!");
       }
     } else {
-      console.log(`✅ Chroma DB "policy-documents" collection already exists. Skipping seed.`);
+      console.log(`✅ Chroma DB "policy-documents" collection already exists and has documents. Skipping seed.`);
     }
   } catch (err) {
     console.error("❌ Error checking/seeding Chroma DB:", err.message);
