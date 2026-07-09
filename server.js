@@ -484,7 +484,11 @@ app.get("/api/v2/chroma/search", async (req, res) => {
   if (!query) return res.json({ documents: [], metadatas: [], ids: [] });
   try {
     const chromaUrl = process.env.CHROMA_URL || "https://chroma-corechroma-production-1118.up.railway.app";
-    const collectionId = "92ec6ff0-999f-4892-874e-5b8679ebe4c8"; // Policy docs collection
+    const collectionsRes = await fetch(`${chromaUrl}/api/v2/tenants/default_tenant/databases/default_database/collections`);
+    const collections = await collectionsRes.json();
+    const targetColl = collections.find(c => c.name === "policy-documents");
+    if (!targetColl) throw new Error("policy-documents collection not found");
+    const collectionId = targetColl.id;
     const searchUrl = `${chromaUrl}/api/v2/tenants/default_tenant/databases/default_database/collections/${collectionId}/get`;
 
     const chromaRes = await fetch(searchUrl, {
