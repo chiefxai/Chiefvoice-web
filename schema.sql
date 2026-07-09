@@ -15,3 +15,13 @@ create table if not exists public.calls (
 -- 1. Go to Supabase Storage -> New Bucket
 -- 2. Name: recordings
 -- 3. Set it to Public (or configure appropriate RLS policies for uploads/reads)
+
+-- Create table for storing lead responses from voice questionnaires
+create table if not exists public.lead_responses (
+  id uuid default gen_random_uuid() primary key,
+  call_id text not null,
+  policyholder_phone text,
+  question text not null,
+  answer text not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);

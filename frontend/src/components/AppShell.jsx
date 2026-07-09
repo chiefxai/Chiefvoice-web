@@ -11,6 +11,7 @@ const nav = [
   { to: "/orders", label: "Quotes & Policies", icon: ListOrdered },
   { to: "/catalog", label: "Insurance Products", icon: Package },
   { to: "/customers", label: "Policyholders", icon: Users },
+  { to: "/questionnaire", label: "Lead Questionnaire", icon: FileText },
   { to: "/khata", label: "Premium Payments", icon: Wallet },
   { to: "/delivery", label: "Claims Processing", icon: Truck },
   { to: "/broadcast", label: "Renewal Broadcast", icon: Megaphone },

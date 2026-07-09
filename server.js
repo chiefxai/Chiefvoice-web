@@ -407,6 +407,104 @@ app.post("/api/customers", (req, res) => {
   res.status(201).json(newCust);
 });
 
+
+// ── Questionnaire Questions API ──
+app.get("/api/questions", (req, res) => {
+  const defaultQuestions = [
+    "What is your full name?",
+    "What type of coverage are you looking for?",
+    "What is your budget target?",
+    "Do you have any pre-existing health conditions?"
+  ];
+  res.json(readAll("questions", defaultQuestions));
+});
+
+app.post("/api/questions", (req, res) => {
+  if (Array.isArray(req.body)) {
+    writeAll("questions", req.body);
+    broadcastLog(`⚙️ Questionnaire questions list updated`, { type: "system" });
+    return res.json(req.body);
+  }
+  res.status(400).json({ error: "Invalid questions payload" });
+});
+
+// ── Lead Responses API ──
+app.get("/api/lead-responses", async (req, res) => {
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from("lead_responses")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (!error) return res.json(data);
+      console.warn("Supabase query error for lead_responses:", error.message);
+    } catch (err) {
+      console.warn("Failed to fetch lead_responses from Supabase:", err.message);
+    }
+  }
+  // Local fallback
+  res.json(readAll("lead_responses", []));
+});
+
+app.post("/api/lead-responses", async (req, res) => {
+  const payload = {
+    id: `RESP-${Date.now().toString().slice(-5)}`,
+    call_id: req.body.call_id || `call_local_${Date.now()}`,
+    policyholder_phone: req.body.policyholder_phone || "+918939479296",
+    question: req.body.question,
+    answer: req.body.answer,
+    created_at: new Date().toISOString()
+  };
+
+  // Local write
+  append("lead_responses", payload);
+
+  // Supabase write
+  if (supabase) {
+    try {
+      const { error } = await supabase.from("lead_responses").insert([{
+        call_id: payload.call_id,
+        policyholder_phone: payload.policyholder_phone,
+        question: payload.question,
+        answer: payload.answer
+      }]);
+      if (error) console.error("Supabase insert error for lead_responses:", error.message);
+    } catch (err) {
+      console.error("Failed to insert lead_responses into Supabase:", err.message);
+    }
+  }
+
+  broadcastLog(`📝 Lead response recorded: "${payload.question}" ➔ "${payload.answer}"`, { type: "system" });
+  res.status(201).json(payload);
+});
+
+// ── Chroma Vector search proxy ──
+app.get("/api/v2/chroma/search", async (req, res) => {
+  const query = req.query.q || "";
+  if (!query) return res.json({ documents: [], metadatas: [], ids: [] });
+  try {
+    const chromaUrl = process.env.CHROMA_URL || "https://w9h781m5-8000.inc1.devtunnels.ms";
+    const collectionId = "92ec6ff0-999f-4892-874e-5b8679ebe4c8"; // Policy docs collection
+    const searchUrl = `${chromaUrl}/api/v2/tenants/default_tenant/databases/default_database/collections/${collectionId}/get`;
+
+    const chromaRes = await fetch(searchUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        where_document: { "$contains": query },
+        limit: 3,
+        include: ["documents", "metadatas"]
+      })
+    });
+
+    const data = await chromaRes.json();
+    res.json(data);
+  } catch (err) {
+    console.error("Chroma search proxy failed:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/customers/:id", (req, res) => {
   const c = readAll("customers_default", []).find((x) => x.id === req.params.id);
   return c ? res.json(c) : res.sendStatus(404);

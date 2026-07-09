@@ -18,6 +18,7 @@ import Billing from "./pages/Billing";
 import Payments from "./pages/Payments";
 import Settings from "./pages/Settings";
 import Subscription from "./pages/Subscription";
+import Questionnaire from "./pages/Questionnaire";
 
 export default function App() {
   return (
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="/payments" element={<Payments />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/subscription" element={<Subscription />} />
+        <Route path="/questionnaire" element={<Questionnaire />} />
       </Route>
     </Routes>
   );

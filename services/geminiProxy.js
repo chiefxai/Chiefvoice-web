@@ -124,9 +124,31 @@ async function handleBrowserSession(browserWs) {
   const activeConfig = getConfig();
   const voiceName = VOICE_MAP[activeConfig.activeVoice] || "Puck";
 
+  // Fetch configured CRM questionnaire questions
+  const { readAll } = require("./store");
+  const defaultQuestions = [
+    "What is your full name?",
+    "What type of coverage are you looking for?",
+    "What is your budget target?",
+    "Do you have any pre-existing health conditions?"
+  ];
+  const questionsList = readAll("questions", defaultQuestions);
+
+  const questionnairePrompt = `
+══════════════════════════════════════════
+MANDATORY QUESTIONNAIRE PROTOCOL
+══════════════════════════════════════════
+You are an insurance agent collecting leads. You MUST ask the caller the following questions ONE BY ONE. Do NOT ask them all at once. Wait for their response for each question:
+${questionsList.map((q, i) => `${i + 1}. ${q}`).join("\n")}
+
+When the user answers a question, you must immediately call the tool 'save_question_response' with the exact question you asked and the answer they gave, and then move to the next question.
+
+If the user has any policy or general insurance questions at any point during the call, call the 'search_policy_knowledge_base' tool with their search query to get the exact facts and answers. Do not make up any insurance coverage details or terms. Use the retrieved document text to explain.
+`;
+
   // buildRuntimePrompt converts slider numbers → human prose instructions
   // e.g. speed:75 → "Speak at a quick, energetic pace"
-  const finalPrompt = buildRuntimePrompt(activeConfig);
+  const finalPrompt = buildRuntimePrompt(activeConfig) + "\n" + questionnairePrompt;
 
   console.log(`📞 New call | ID: ${callId} | Voice: ${activeConfig.activeVoice} (${voiceName})`);
 
@@ -272,6 +294,46 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
       // ── Response format: AUDIO only ──────────────────────
       responseModalities: ["AUDIO"],
 
+      // ── Tools / Function Declarations ────────────────────
+      tools: [
+        {
+          functionDeclarations: [
+            {
+              name: "search_policy_knowledge_base",
+              description: "Search the insurance policy documents database for definitions, policy terms, coverages, limits, and rules.",
+              parameters: {
+                type: "OBJECT",
+                properties: {
+                  query: {
+                    type: "STRING",
+                    description: "Specific search terms or keywords to query in the insurance policy database"
+                  }
+                },
+                required: ["query"]
+              }
+            },
+            {
+              name: "save_question_response",
+              description: "Record the client's answer to one of the mandatory questionnaire questions.",
+              parameters: {
+                type: "OBJECT",
+                properties: {
+                  question: {
+                    type: "STRING",
+                    description: "The exact question asked to the client"
+                  },
+                  answer: {
+                    type: "STRING",
+                    description: "The client's answer, response, or statement"
+                  }
+                },
+                required: ["question", "answer"]
+              }
+            }
+          ]
+        }
+      ],
+
       // ── Voice selection ───────────────────────────────────
       // ONE speechConfig here — duplicating it inside generationConfig
       // causes a config conflict that degrades voice quality to robotic.
@@ -315,8 +377,37 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
     },
 
     callbacks: {
-      onmessage: (response) => {
+      onmessage: async (response) => {
         if (!browserWs || browserWs.readyState !== 1) return;
+
+        // Handle tool calls from Gemini (RAG search or saving questionnaire answers)
+        if (response.toolCall) {
+          const functionCalls = response.toolCall.functionCalls;
+          const functionResponses = [];
+
+          for (const call of functionCalls) {
+            console.log(`🛠️ Tool Call: Executing ${call.name}`);
+            let result = {};
+            if (call.name === "search_policy_knowledge_base") {
+              result = await handleSearchPolicyKnowledgeBase(call.args.query);
+            } else if (call.name === "save_question_response") {
+              const activeConfig = getConfig();
+              const phone = activeConfig.activePhone || "+918939479296";
+              result = await handleSaveQuestionResponse("web_call", phone, call.args.question, call.args.answer);
+            }
+            functionResponses.push({
+              id: call.id,
+              name: call.name,
+              response: { output: result }
+            });
+          }
+
+          try {
+            session.sendToolResponse({ functionResponses });
+          } catch (err) {
+            session.send({ toolResponse: { functionResponses } });
+          }
+        }
 
         // AI audio response
         if (response.serverContent?.modelTurn?.parts) {
@@ -532,4 +623,72 @@ async function processPostCallData(callId, tempPcmPath, durationSeconds, transcr
   }
 }
 
-module.exports = { handleBrowserSession };
+const fetch = require("node-fetch");
+
+async function handleSearchPolicyKnowledgeBase(query) {
+  try {
+    const chromaUrl = process.env.CHROMA_URL || "https://w9h781m5-8000.inc1.devtunnels.ms";
+    const collectionId = "92ec6ff0-999f-4892-874e-5b8679ebe4c8";
+    const searchUrl = `${chromaUrl}/api/v2/tenants/default_tenant/databases/default_database/collections/${collectionId}/get`;
+
+    console.log(`🔍 Chroma DB: Searching for "${query}"`);
+    const res = await fetch(searchUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        where_document: { "$contains": query },
+        limit: 3,
+        include: ["documents"]
+      })
+    });
+    const data = await res.json();
+    if (data && Array.isArray(data.documents) && data.documents.length > 0) {
+      const docs = data.documents.join("\n\n---\n\n");
+      console.log(`✅ Chroma DB: Found ${data.documents.length} matches.`);
+      return { success: true, documents: docs };
+    }
+    return { success: false, message: "No matching policy documents found in the database." };
+  } catch (err) {
+    console.error("❌ Chroma DB search failed:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+async function handleSaveQuestionResponse(callId, phone, question, answer) {
+  try {
+    const { append } = require("./store");
+    const payload = {
+      id: `RESP-${Date.now().toString().slice(-5)}`,
+      call_id: callId,
+      policyholder_phone: phone || "+918939479296",
+      question,
+      answer,
+      created_at: new Date().toISOString()
+    };
+    
+    // Save locally
+    append("lead_responses", payload);
+
+    // Save to Supabase if available
+    const { createClient } = require("@supabase/supabase-js");
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_ANON_KEY;
+    if (supabaseUrl && supabaseKey) {
+      const supabase = createClient(supabaseUrl, supabaseKey);
+      await supabase.from("lead_responses").insert([{
+        call_id: callId,
+        policyholder_phone: phone,
+        question,
+        answer
+      }]);
+    }
+    
+    console.log(`✅ Questionnaire: Saved response for "${question}" ➔ "${answer}"`);
+    return { success: true, saved: true };
+  } catch (err) {
+    console.error("❌ Questionnaire save failed:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+module.exports = { handleBrowserSession, handleSearchPolicyKnowledgeBase, handleSaveQuestionResponse };
