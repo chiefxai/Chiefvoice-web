@@ -294,8 +294,17 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
     try {
       const payload = JSON.parse(data);
       if (payload.setup) {
-        delete payload.setup.realtimeInputConfig;
         delete payload.setup.contextWindowCompression;
+
+        payload.setup.realtime_input_config = {
+          automatic_activity_detection: {
+            disabled: false,
+            start_of_speech_sensitivity: "START_SENSITIVITY_HIGH",
+            end_of_speech_sensitivity: "END_SENSITIVITY_HIGH",
+            silence_duration_ms: 600
+          }
+        };
+        delete payload.setup.realtimeInputConfig;
 
         if (!payload.setup.generationConfig) {
           payload.setup.generationConfig = {};
@@ -303,7 +312,7 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
         payload.setup.generationConfig.temperature = 0.9;
         
         data = JSON.stringify(payload);
-        console.log("⚙️ Twilio Stream: Intercepted setup payload.");
+        console.log("⚙️ Twilio Stream: Intercepted setup payload and injected low-latency VAD config.");
         if (global.broadcastLog) {
           global.broadcastLog(`📤 [Gemini Send] setup (model: gemini-2.5-flash-native-audio-latest, voice: ${voiceName})`, { type: "gemini_raw" });
         }
