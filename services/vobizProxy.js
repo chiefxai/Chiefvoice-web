@@ -213,8 +213,18 @@ If the user has any policy or general insurance questions at any point during th
 
   vobizWs.on("message", async (rawMsg) => {
     if (!isActive) return;
+    const rawStr = rawMsg.toString();
+    
+    // Handle plain-text error messages from Vobiz (non-JSON)
+    let msg;
     try {
-      const msg = JSON.parse(rawMsg.toString());
+      msg = JSON.parse(rawStr);
+    } catch (_) {
+      console.warn("⚠️ Vobiz sent non-JSON message:", rawStr.slice(0, 200));
+      return;
+    }
+    
+    try {
       
       switch (msg.event) {
         case "start":
@@ -257,7 +267,7 @@ If the user has any policy or general insurance questions at any point during th
           break;
       }
     } catch (err) {
-      console.error("❌ Vobiz Message error:", err.message);
+      console.error("❌ Vobiz Message error:", err.message, "| Raw:", rawMsg.toString().slice(0, 200));
     }
   });
 
