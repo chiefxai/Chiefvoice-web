@@ -34,7 +34,7 @@ export default function AppShell() {
   const triggerCall = async (phone) => {
     setActiveCall({ phone, status: 'calling' });
     try {
-      const res = await fetch(`${API_BASE}/api/twilio/call`, {
+      const res = await fetch(`${API_BASE}/api/vobiz/call`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phoneNumber: phone })
@@ -43,7 +43,7 @@ export default function AppShell() {
       if (data.success) {
         setActiveCall({ phone, callSid: data.callSid, status: 'active' });
       } else {
-        alert("Twilio call failed: " + (data.error || "Please check credentials"));
+        alert("Vobiz call failed: " + (data.error || "Please check credentials"));
         setActiveCall(null);
       }
     } catch (err) {
@@ -59,7 +59,7 @@ export default function AppShell() {
     }
     setActiveCall(prev => prev ? { ...prev, status: 'hanging_up' } : null);
     try {
-      await fetch(`${API_BASE}/api/twilio/hangup`, {
+      await fetch(`${API_BASE}/api/vobiz/hangup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ callSid: activeCall.callSid })

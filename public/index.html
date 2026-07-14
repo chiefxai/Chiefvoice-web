@@ -558,10 +558,10 @@ async function startPhoneCall() {
   setStatus("active", "Initiating phone call...");
 
   try {
-    const response = await fetch("/api/twilio/call", {
+    const response = await fetch("/api/vobiz/call", {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ phoneNumber: phone })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phoneNumber: phone })
     });
     const result = await response.json();
 
@@ -589,13 +589,13 @@ async function endPhoneCall() {
 
   if (currentCallSid) {
     try {
-      await fetch("/api/twilio/hangup", {
+      await fetch("/api/vobiz/hangup", {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ callSid: currentCallSid })
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ callSid: currentCallSid })
       });
     } catch (e) {
-      console.error("Failed to hang up Twilio call:", e);
+      console.error("Failed to hang up Vobiz call:", e);
     }
   }
 

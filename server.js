@@ -1,7 +1,7 @@
 // ============================================================
 // server.js
 //
-// HTTP Server + WebSocket Proxy + REST API for Admin Dashboard
+// HTTP Server + WebSocket Proxy + REST API for Admin Dashboard (Vobiz.ai Integrated)
 // ============================================================
 
 require("dotenv").config();
@@ -13,7 +13,7 @@ const ws = require("ws");
 const { WebSocketServer } = ws;
 const { createClient } = require("@supabase/supabase-js");
 const { handleBrowserSession } = require("./services/geminiProxy");
-const { handleTwilioSession, twilioCallNumbers } = require("./services/twilioProxy");
+const { handleVobizSession, vobizCallNumbers } = require("./services/vobizProxy");
 const { getConfig, updateConfig } = require("./services/config");
 const { readAll, writeAll, append, update } = require("./services/store");
 
@@ -119,66 +119,67 @@ let activeSessionsCount = 0;
 // REST API Endpoints
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
-// Twilio Webhook Answer Endpoint
-app.post("/api/twilio/incoming", (req, res) => {
-  const { CallSid, From } = req.body;
-  if (CallSid && From) {
-    twilioCallNumbers.set(CallSid, From);
+// Vobiz Webhook Answer Endpoint
+app.post("/api/vobiz/incoming", (req, res) => {
+  const From = req.body.From || req.query.From;
+  const CallUUID = req.body.CallUUID || req.query.CallUUID || req.body.callId || req.body.CallSid;
+
+  if (CallUUID && From) {
+    vobizCallNumbers.set(CallUUID, From);
     // Remove from cache after 2 minutes
-    setTimeout(() => twilioCallNumbers.delete(CallSid), 120000);
+    setTimeout(() => vobizCallNumbers.delete(CallUUID), 120000);
   }
 
   res.set("Content-Type", "text/xml");
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Connect>
-    <Stream url="wss://${req.headers.host}/twilio/stream" />
-  </Connect>
+  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">wss://${req.headers.host}/vobiz/stream</Stream>
 </Response>`);
 });
 
-// Initiate Outbound Twilio Call to User's Phone
-app.post("/api/twilio/call", async (req, res) => {
+// Initiate Outbound Vobiz Call to User's Phone
+app.post("/api/vobiz/call", async (req, res) => {
   const { phoneNumber } = req.body;
   if (!phoneNumber) {
     return res.status(400).json({ error: "Missing phoneNumber in request body" });
   }
 
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const twilioNumber = process.env.TWILIO_PHONE_NUMBER;
+  const authId = process.env.VOBIZ_AUTH_ID;
+  const authToken = process.env.VOBIZ_AUTH_TOKEN;
+  const vobizNumber = process.env.VOBIZ_PHONE_NUMBER;
 
-  if (!accountSid || !authToken || !twilioNumber) {
+  if (!authId || !authToken || !vobizNumber) {
     return res.status(500).json({
-      error: "Twilio credentials are not configured on the server. Please set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER."
+      error: "Vobiz credentials are not configured on the server. Please set VOBIZ_AUTH_ID, VOBIZ_AUTH_TOKEN, and VOBIZ_PHONE_NUMBER."
     });
   }
 
   try {
-    const authString = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
     let callbackUrl;
     if (process.env.PUBLIC_URL) {
-      callbackUrl = `${process.env.PUBLIC_URL}/api/twilio/incoming`;
+      callbackUrl = `${process.env.PUBLIC_URL}/api/vobiz/incoming`;
     } else {
       const protocol = req.secure || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
       const host = req.headers.host;
-      callbackUrl = `${protocol}://${host}/api/twilio/incoming`;
+      callbackUrl = `${protocol}://${host}/api/vobiz/incoming`;
     }
 
-    console.log(`📞 Triggering Twilio outbound call to ${phoneNumber} from ${twilioNumber}...`);
+    console.log(`📞 Triggering Vobiz outbound call to ${phoneNumber} from ${vobizNumber}...`);
 
     const response = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`,
+      `https://api.vobiz.ai/api/v1/Account/${authId}/Call/`,
       {
         method: "POST",
         headers: {
-          "Authorization": `Basic ${authString}`,
-          "Content-Type": "application/x-www-form-urlencoded"
+          "X-Auth-ID": authId,
+          "X-Auth-Token": authToken,
+          "Content-Type": "application/json"
         },
-        body: new URLSearchParams({
-          To: phoneNumber,
-          From: twilioNumber,
-          Url: callbackUrl
+        body: JSON.stringify({
+          to: phoneNumber,
+          from: vobizNumber,
+          answer_url: callbackUrl,
+          answer_method: "POST"
         })
       }
     );
@@ -186,59 +187,57 @@ app.post("/api/twilio/call", async (req, res) => {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.message || `Twilio API error (Status: ${response.status})`);
+      throw new Error(data.message || `Vobiz API error (Status: ${response.status})`);
     }
 
-    console.log(`✅ Outbound Twilio call initiated. Call SID: ${data.sid}`);
-    res.json({ success: true, callSid: data.sid });
+    console.log(`✅ Outbound Vobiz call initiated. Response:`, JSON.stringify(data));
+    res.json({ success: true, callSid: data.callId || data.callUUID || data.sid || "vobiz_outbound" });
   } catch (err) {
-    console.error("❌ Failed to initiate Twilio outbound call:", err.message);
+    console.error("❌ Failed to initiate Vobiz outbound call:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Hang up active Twilio call
-app.post("/api/twilio/hangup", async (req, res) => {
+// Hang up active Vobiz call
+app.post("/api/vobiz/hangup", async (req, res) => {
   const { callSid } = req.body;
   if (!callSid) {
     return res.status(400).json({ error: "Missing callSid in request body" });
   }
 
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const authId = process.env.VOBIZ_AUTH_ID;
+  const authToken = process.env.VOBIZ_AUTH_TOKEN;
 
-  if (!accountSid || !authToken) {
+  if (!authId || !authToken) {
     return res.status(500).json({
-      error: "Twilio credentials are not configured on the server."
+      error: "Vobiz credentials are not configured on the server."
     });
   }
 
   try {
-    const authString = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
-    console.log(`📞 Hanging up Twilio call ${callSid}...`);
+    console.log(`📞 Hanging up Vobiz call ${callSid}...`);
 
     const response = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls/${callSid}.json`,
+      `https://api.vobiz.ai/api/v1/Account/${authId}/Call/${callSid}/`,
       {
-        method: "POST",
+        method: "DELETE",
         headers: {
-          "Authorization": `Basic ${authString}`,
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: new URLSearchParams({ Status: "completed" })
+          "X-Auth-ID": authId,
+          "X-Auth-Token": authToken,
+          "Content-Type": "application/json"
+        }
       }
     );
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.message || `Twilio hangup error (Status: ${response.status})`);
+    if (!response.ok && response.status !== 204) {
+      const errText = await response.text();
+      throw new Error(errText || `Vobiz hangup error (Status: ${response.status})`);
     }
 
-    console.log(`✅ Twilio call completed successfully: ${callSid}`);
+    console.log(`✅ Vobiz call completed successfully: ${callSid}`);
     res.json({ success: true });
   } catch (err) {
-    console.error("❌ Failed to hang up Twilio call:", err.message);
+    console.error("❌ Failed to hang up Vobiz call:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -611,7 +610,7 @@ const server = http.createServer(app);
 
 // WebSocket setup using manual upgrade routing to support multiple paths
 const wss = new WebSocketServer({ noServer: true });
-const wssTwilio = new WebSocketServer({ noServer: true });
+const wssVobiz = new WebSocketServer({ noServer: true });
 
 wss.on("connection", (ws, req) => {
   activeSessionsCount++;
@@ -621,21 +620,21 @@ wss.on("connection", (ws, req) => {
   handleBrowserSession(ws);
 
   ws.on("close", () => {
-    activeSessionsCount = Math.max(0, activeSessionsCount - 1);
-    console.log(`🌐 Browser disconnected | Active: ${activeSessionsCount}`);
+     activeSessionsCount = Math.max(0, activeSessionsCount - 1);
+     console.log(`🌐 Browser disconnected | Active: ${activeSessionsCount}`);
   });
 });
 
-wssTwilio.on("connection", (ws, req) => {
+wssVobiz.on("connection", (ws, req) => {
   activeSessionsCount++;
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-  console.log(`📞 Twilio call connected from ${ip} | Active: ${activeSessionsCount}`);
+  console.log(`📞 Vobiz call connected from ${ip} | Active: ${activeSessionsCount}`);
 
-  handleTwilioSession(ws);
+  handleVobizSession(ws);
 
   ws.on("close", () => {
     activeSessionsCount = Math.max(0, activeSessionsCount - 1);
-    console.log(`📞 Twilio call disconnected | Active: ${activeSessionsCount}`);
+    console.log(`📞 Vobiz call disconnected | Active: ${activeSessionsCount}`);
   });
 });
 
@@ -652,9 +651,9 @@ server.on("upgrade", (request, socket, head) => {
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit("connection", ws, request);
     });
-  } else if (pathname === "/twilio/stream") {
-    wssTwilio.handleUpgrade(request, socket, head, (ws) => {
-      wssTwilio.emit("connection", ws, request);
+  } else if (pathname === "/vobiz/stream") {
+    wssVobiz.handleUpgrade(request, socket, head, (ws) => {
+      wssVobiz.emit("connection", ws, request);
     });
   } else {
     socket.destroy();
@@ -768,7 +767,7 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`\n✅ ChiefVoice web server running on port ${PORT}`);
   console.log(`📱 Open on mobile: ${publicUrl}`);
   console.log(`🎙️  Browser WebSocket path: /session`);
-  console.log(`📞 Twilio Stream WebSocket path: /twilio/stream\n`);
+  console.log(`📞 Vobiz Stream WebSocket path: /vobiz/stream\n`);
 
   // Run dynamic Chroma DB seeding
   seedChromaDB();
