@@ -5,6 +5,25 @@
 // ============================================================
 
 require("dotenv").config();
+
+// Write Google Application Credentials JSON from env variables to a local temp file on startup if provided
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    const tempDir = path.join(__dirname, "temp");
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    const credsFilePath = path.join(tempDir, "gcp-creds.json");
+    fs.writeFileSync(credsFilePath, process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON, "utf8");
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = credsFilePath;
+    console.log("🔑 Google Application Credentials JSON loaded and written to temp path.");
+  } catch (err) {
+    console.error("❌ Failed to write GOOGLE_APPLICATION_CREDENTIALS_JSON:", err.message);
+  }
+}
+
 const http = require("http");
 const express = require("express");
 const cors = require("cors");

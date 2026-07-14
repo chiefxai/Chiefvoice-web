@@ -15,10 +15,21 @@ const {
 } = require("./audioConverter");
 
 // ── Clients ───────────────────────────────────────────────────
-const genai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  apiVersion: "v1alpha",
-});
+const isVertex = !!(process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+const genaiOptions = {};
+
+if (isVertex) {
+  genaiOptions.vertexai = true;
+  genaiOptions.project = process.env.GOOGLE_CLOUD_PROJECT || "gen-lang-client-0274535771";
+  genaiOptions.location = process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
+  console.log(`🤖 Initializing GoogleGenAI with Vertex AI (Project: ${genaiOptions.project}, Location: ${genaiOptions.location})`);
+} else {
+  genaiOptions.apiKey = process.env.GEMINI_API_KEY;
+  genaiOptions.apiVersion = "v1alpha";
+  console.log("🤖 Initializing GoogleGenAI with Google AI Studio (API Key)");
+}
+
+const genai = new GoogleGenAI(genaiOptions);
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
@@ -341,7 +352,8 @@ async function openGeminiSession(vobizWs, voiceName, systemPrompt, recordStream,
         data = JSON.stringify(payload);
         console.log("⚙️ Vobiz Stream: Intercepted setup payload and injected low-latency VAD config.");
         if (global.broadcastLog) {
-          global.broadcastLog(`📤 [Gemini Send] setup (model: gemini-2.5-flash-native-audio-latest, voice: ${voiceName})`, { type: "gemini_raw" });
+          const modelName = isVertex ? "gemini-live-2.5-flash-native-audio" : "gemini-2.5-flash-native-audio-latest";
+          global.broadcastLog(`📤 [Gemini Send] setup (model: ${modelName}, voice: ${voiceName})`, { type: "gemini_raw" });
         }
       }
     } catch (_) {}
@@ -349,8 +361,9 @@ async function openGeminiSession(vobizWs, voiceName, systemPrompt, recordStream,
     return originalSend.call(this, data, options, callback);
   };
 
+  const modelName = isVertex ? "gemini-live-2.5-flash-native-audio" : "gemini-2.5-flash-native-audio-latest";
   const session = await genai.live.connect({
-    model: "gemini-2.5-flash-native-audio-latest",
+    model: modelName,
     config: {
       systemInstruction: {
         parts: [{ text: systemPrompt }]
