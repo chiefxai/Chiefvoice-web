@@ -229,7 +229,7 @@ If the user has any policy or general insurance questions at any point during th
             const geminiSession = await geminiSessionPromise;
             if (!geminiSession) return;
 
-            // Inbound payload is big-endian 16-bit PCM (network byte order)
+            // Inbound payload is 16-bit PCM (network byte order / big-endian)
             const rawPCM = Buffer.from(msg.media.payload, "base64");
             
             // Swap Big-Endian to Little-Endian in-place
@@ -237,14 +237,14 @@ If the user has any policy or general insurance questions at any point during th
               rawPCM.swap16();
             }
 
-            // Upsample PCM 16-bit 8kHz -> PCM 16-bit 16kHz for Gemini
-            const pcm16k = upsample8To16(rawPCM);
+            // Vobiz now sends 16kHz so no upsampling needed - send directly to Gemini
+            const pcm16k = rawPCM;
 
             // Send to Gemini
             await geminiSession.sendAudio(pcm16k.toString("base64"));
             totalInboundAudioBytes += pcm16k.length;
 
-            // Save to recording file (16kHz linear PCM)
+            // Save to recording file
             recordStream.write(pcm16k);
           }
           break;
@@ -303,14 +303,14 @@ async function openGeminiSession(vobizWs, voiceName, systemPrompt, recordStream,
   const startPacing = () => {
     if (intervalId) return;
     intervalId = setInterval(() => {
-      // 320 bytes of PCM16 represents 20ms of audio at 8kHz (160 samples * 2 bytes)
-      if (outboundQueue.length >= 320) {
-        const chunk = Buffer.from(outboundQueue.splice(0, 320));
+      // 640 bytes of PCM16 represents 20ms of audio at 16kHz (320 samples * 2 bytes)
+      if (outboundQueue.length >= 640) {
+        const chunk = Buffer.from(outboundQueue.splice(0, 640));
         sendJson(vobizWs, {
           event: "playAudio",
           media: {
             contentType: "audio/x-l16",
-            sampleRate: 8000,
+            sampleRate: 16000,
             payload: chunk.toString("base64")
           }
         });
@@ -476,17 +476,17 @@ async function openGeminiSession(vobizWs, voiceName, systemPrompt, recordStream,
                 onAudioOut(raw24kPCM.length);
               }
               
-              // 1. Resample: 24kHz PCM -> 8kHz PCM
-              const pcm8k = downsample24To8(raw24kPCM);
+              // 1. Resample: 24kHz PCM -> 16kHz PCM for Vobiz playback
+              const pcm16k = resample24To16(raw24kPCM);
 
-              // 2. Queue the bytes for 20ms paced delivery (as Little-Endian PCM)
-              for (let i = 0; i < pcm8k.length; i++) {
-                outboundQueue.push(pcm8k[i]);
+              // 2. Queue the bytes for 20ms paced delivery at 16kHz
+              for (let i = 0; i < pcm16k.length; i++) {
+                outboundQueue.push(pcm16k[i]);
               }
               startPacing();
 
-              // Save resampled version to recording file (downsample/resample to 16kHz for consistency)
-              recordStream.write(resample24To16(raw24kPCM));
+              // Save to recording file
+              recordStream.write(pcm16k);
             }
           }
         }

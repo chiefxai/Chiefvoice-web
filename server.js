@@ -152,7 +152,7 @@ app.post("/api/vobiz/incoming", (req, res) => {
   res.set("Content-Type", "text/xml");
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=8000">wss://${req.headers.host}/vobiz/stream</Stream>
+  <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=16000">wss://${req.headers.host}/vobiz/stream</Stream>
 </Response>`);
 });
 
