@@ -584,7 +584,7 @@ async function openGeminiSession(vobizWs, voiceName, systemPrompt, recordStream,
   return {
     sendAudio: async (base64Pcm16k) => {
       await session.sendRealtimeInput({
-        audio: {
+        media: {
           data: base64Pcm16k,
           mimeType: "audio/pcm;rate=16000",
         },
