@@ -239,15 +239,11 @@ If the user has any policy or general insurance questions at any point during th
             const geminiSession = await geminiSessionPromise;
             if (!geminiSession) return;
 
-            // Inbound payload is 16-bit PCM (network byte order / big-endian)
+            // Inbound payload is 16-bit little-endian PCM from Vobiz (L16 = host byte order)
             const rawPCM = Buffer.from(msg.media.payload, "base64");
-            
-            // Swap Big-Endian to Little-Endian in-place
-            if (rawPCM.length % 2 === 0) {
-              rawPCM.swap16();
-            }
+            // No byte-swap needed: L16 is already little-endian
 
-            // Vobiz now sends 16kHz so no upsampling needed - send directly to Gemini
+            // Vobiz sends 16kHz - send directly to Gemini
             const pcm16k = rawPCM;
 
             // Send to Gemini
