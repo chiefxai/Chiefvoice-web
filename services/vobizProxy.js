@@ -219,7 +219,7 @@ If the user has any policy or general insurance questions at any point during th
             if (!geminiSession) return;
 
             // Inbound payload is big-endian 16-bit PCM (network byte order)
-            const rawPCM = Buffer.from(msg.media.chunk, "base64");
+            const rawPCM = Buffer.from(msg.media.payload, "base64");
             
             // Swap Big-Endian to Little-Endian in-place
             if (rawPCM.length % 2 === 0) {
