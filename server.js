@@ -237,7 +237,7 @@ app.post("/api/vobiz/call", async (req, res) => {
     }
 
     console.log(`✅ Outbound Vobiz call initiated. Response:`, JSON.stringify(data));
-    res.json({ success: true, callSid: data.callId || data.callUUID || data.sid || "vobiz_outbound" });
+    res.json({ success: true, callSid: data.request_uuid || data.api_id || data.callId || data.callUUID || data.sid || "vobiz_outbound" });
   } catch (err) {
     console.error("❌ Failed to initiate Vobiz outbound call:", err.message);
     res.status(500).json({ error: err.message });
