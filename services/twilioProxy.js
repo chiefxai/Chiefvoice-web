@@ -326,7 +326,7 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
             disabled: false,
             start_of_speech_sensitivity: "START_SENSITIVITY_HIGH",
             end_of_speech_sensitivity: "END_SENSITIVITY_HIGH",
-            silence_duration_ms: 600
+            silence_duration_ms: 350
           }
         };
         delete payload.setup.realtimeInputConfig;
