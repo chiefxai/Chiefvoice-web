@@ -1340,7 +1340,8 @@ Respond naturally, answer their questions clearly, and address them by name.`,
     if (nextPendingId) {
       const lead = leadsDatabase.find((l) => l.id === nextPendingId);
       if (lead) {
-        handleInitiateTaskCall(lead);
+        setActiveLead(lead);
+        setCallState('idle');
       }
     } else {
       alert("All leads in today's task are already dialed!");
@@ -1654,7 +1655,10 @@ Respond naturally, answer their questions clearly, and address them by name.`,
                                   Skip
                                 </button>
                                 <button
-                                  onClick={() => handleInitiateTaskCall(lead)}
+                                  onClick={() => {
+                                    setActiveLead(lead);
+                                    setCallState('idle');
+                                  }}
                                   disabled={callState === 'dialing' || callState === 'connected'}
                                   className="text-[10px] font-bold text-blue-600 hover:text-white hover:bg-blue-600 border border-blue-200 hover:border-blue-600 px-2.5 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1"
                                 >
@@ -1670,7 +1674,10 @@ Respond naturally, answer their questions clearly, and address them by name.`,
                               </button>
                             ) : (
                               <button
-                                onClick={() => handleInitiateTaskCall(lead)}
+                                onClick={() => {
+                                  setActiveLead(lead);
+                                  setCallState('idle');
+                                }}
                                 className="text-[10px] font-medium text-blue-600 hover:underline cursor-pointer"
                               >
                                 Redial
