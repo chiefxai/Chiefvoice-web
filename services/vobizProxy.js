@@ -367,7 +367,7 @@ async function openGeminiSession(vobizWs, voiceName, systemPrompt, recordStream,
     return originalSend.call(this, data, options, callback);
   };
 
-  const modelName = isVertex ? "gemini-live-2.5-flash-native-audio" : "gemini-2.5-flash-native-audio-latest";
+  const modelName = isVertex ? "gemini-live-2.5-flash-native-audio" : "gemini-2.0-flash-exp";
   const session = await genai.live.connect({
     model: modelName,
     config: {
