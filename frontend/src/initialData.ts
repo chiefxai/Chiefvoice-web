@@ -343,6 +343,16 @@ export const initialVirtualNumbers: VirtualNumber[] = [
     routingUrl: 'https://api.chiefxai.com/voice/backup',
     incomingCallCount: 0,
     outgoingCallCount: 0
+  },
+  {
+    id: 'VN-404',
+    number: '+91 73580 21190',
+    provider: 'Vobiz',
+    status: 'Active',
+    friendlyName: 'Vobiz AI Hotline',
+    routingUrl: 'https://api.chiefxai.com/voice/vobiz-route',
+    incomingCallCount: 88,
+    outgoingCallCount: 920
   }
 ];
 
