@@ -127,8 +127,8 @@ app.set("trust proxy", 1);
 app.use(cors()); // Enable CORS for decoupled dashboard
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, "public")));
-app.use("/dashboard", express.static(path.join(__dirname, "dashboard")));
+app.use(express.static(path.join(__dirname, "dashboard")));
+app.use("/public", express.static(path.join(__dirname, "public")));
 
 // Supabase client initialization
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -1220,6 +1220,14 @@ app.post('/api/workflows/sync', (req, res) => res.json(writeAll('workflows', req
 app.post('/api/settings/numbers/sync', (req, res) => res.json(writeAll('numbers', req.body)));
 app.post('/api/settings/team/sync', (req, res) => res.json(writeAll('team', req.body)));
 app.post('/api/call-logs/sync', (req, res) => res.json(writeAll('calllogs', req.body)));
+
+// SPA fallback routing
+app.get("*", (req, res, next) => {
+  if (req.url.startsWith("/api") || req.url.startsWith("/session") || req.url.startsWith("/vobiz/stream") || req.url.startsWith("/twilio/stream")) {
+    return next();
+  }
+  res.sendFile(path.join(__dirname, "dashboard", "index.html"));
+});
 
 const server = http.createServer(app);
 
