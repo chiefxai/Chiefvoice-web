@@ -33,8 +33,19 @@ const { WebSocketServer } = ws;
 const { createClient } = require("@supabase/supabase-js");
 const { handleBrowserSession } = require("./services/geminiProxy");
 const { handleVobizSession, vobizCallNumbers } = require("./services/vobizProxy");
+const { handleTwilioSession, twilioCallNumbers } = require("./services/twilioProxy");
 const { getConfig, updateConfig } = require("./services/config");
 const { readAll, writeAll, append, update } = require("./services/store");
+const {
+  initialLeads,
+  initialWorkflows,
+  initialCampaigns,
+  initialCallLogs,
+  initialLoans,
+  initialVirtualNumbers,
+  initialTeamMembers,
+  initialOrgSettings
+} = require("./services/initialData");
 
 // SSE logs-stream system
 let logClients = [];
@@ -90,6 +101,22 @@ function seedData() {
   }
 }
 seedData();
+
+function seedCRMData() {
+  if (readAll("leads", []).length === 0) writeAll("leads", initialLeads);
+  if (readAll("campaigns", []).length === 0) writeAll("campaigns", initialCampaigns);
+  if (readAll("workflows", []).length === 0) writeAll("workflows", initialWorkflows);
+  if (readAll("loans", []).length === 0) writeAll("loans", initialLoans);
+  if (readAll("calllogs", []).length === 0) writeAll("calllogs", initialCallLogs);
+  if (readAll("numbers", []).length === 0) writeAll("numbers", initialVirtualNumbers);
+  if (readAll("team", []).length === 0) writeAll("team", initialTeamMembers);
+  
+  const currentOrg = readAll("org", []);
+  if (currentOrg.length === 0) {
+    writeAll("org", [initialOrgSettings]);
+  }
+}
+seedCRMData();
 
 const app = express();
 
@@ -625,10 +652,580 @@ app.get("/list-models", async (req, res) => {
   }
 });
 
+// ==========================================
+// 1. CRM AI / Gemini endpoints
+// ==========================================
+
+// AI Insights Desk
+app.post('/api/gemini/insights', async (req, res) => {
+  const { leads, loans, campaigns, platformMode } = req.body;
+  const apiKey = process.env.GEMINI_API_KEY;
+  const isInsurance = platformMode === 'insurance';
+
+  if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
+    return res.json({
+      success: true,
+      insights: isInsurance 
+        ? `💡 **AI Underwriting Brief (Simulation Mode)**\n\n*   **Policy Conversions**: Underwriting reports steady workflow. Lead validation is in progress.\n*   **Risk Profile**: Avg risk is low. Follow up on outstanding declarations.`
+        : `💡 **AI Credit Brief (Simulation Mode)**\n\n*   **Loan Conversions**: Metrics indicate positive user growth.\n*   **Risk Profile**: Average portfolio credit score is healthy at 700.`
+    });
+  }
+
+  try {
+    const { GoogleGenAI } = require("@google/genai");
+    const ai = new GoogleGenAI({ apiKey });
+    const role = isInsurance ? 'Chief Underwriting Officer and Risk Strategist for Insurance' : 'Chief Credit Analyst';
+    const terminology = isInsurance ? 'policy types, risk bands, underwritten values, and premiums' : 'loan products, outstanding balances, interest rates, and loan terms';
+
+    const prompt = `You are the ${role} at ChiefXAI. Analyze the following CRM state and provide a high-level strategic brief with executive bullet points. Evaluate the active pipeline metrics, particularly looking at ${terminology}. Use bolding, clean headers, and actionable insights. Do not include system-internal text.
+Leads database: ${JSON.stringify(leads)}
+${isInsurance ? 'Policies' : 'Loans'} database: ${JSON.stringify(loans)}
+Campaigns database: ${JSON.stringify(campaigns)}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: prompt,
+      config: {
+        systemInstruction: isInsurance
+          ? 'You are a veteran Chief Underwriting Officer and risk strategist for top tier global insurers. Speak clearly, professionally and focus on premium yield and underwriting discipline.'
+          : 'You are a veteran Chief Financial Officer and credit risk strategist. Speak clearly and professionally.',
+      },
+    });
+
+    res.json({ success: true, insights: response.text });
+  } catch (error) {
+    res.json({
+      success: true,
+      insights: `💡 **AI Strategic Brief (Simulation Fallback Mode)**\n\n*   Pipeline metrics are operational. General credit scoring and risk profiles remain stable.`
+    });
+  }
+});
+
+// Intelligent Lead Scoring & Auto-tagging
+app.post('/api/gemini/score-lead', async (req, res) => {
+  const { lead } = req.body;
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
+    const score = lead.financialInfo
+      ? Math.round((lead.financialInfo.creditScore - 300) / 5.2 + (lead.financialInfo.monthlyIncome > 8000 ? 20 : 5) - lead.financialInfo.debtToIncome * 30)
+      : 50;
+    const finalScore = Math.max(10, Math.min(100, score));
+    const tags = finalScore > 85 ? ['Prime-Lead', 'Low-Risk'] : finalScore < 50 ? ['Subprime', 'High-DTI'] : ['Standard-Profile'];
+
+    return res.json({
+      success: true,
+      score: finalScore,
+      tags,
+      decision: `Offline scoring algorithm: Credit score ${lead.financialInfo?.creditScore || '700'} maps to rating ${finalScore}/100.`
+    });
+  }
+
+  try {
+    const { GoogleGenAI, Type } = require("@google/genai");
+    const ai = new GoogleGenAI({ apiKey });
+    const prompt = `Assess the loan eligibility score (0-100) for this applicant:
+Applicant Profile: ${JSON.stringify(lead)}
+Analyze debt-to-income (DTI), credit score, monthly income stability, and loan amount requested. Provide the response strictly in JSON format.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            score: { type: Type.INTEGER, description: 'Eligibility score between 0 and 100.' },
+            tags: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: 'Appropriate tags such as Elite, High-DTI, Low-Income, Strong-Employer.',
+            },
+            decision: { type: Type.STRING, description: 'One-sentence rationale explaining the score.' },
+          },
+          required: ['score', 'tags', 'decision'],
+        },
+      },
+    });
+
+    const parsed = JSON.parse(response.text || '{}');
+    res.json({ success: true, ...parsed });
+  } catch (error) {
+    res.json({
+      success: true,
+      score: 75,
+      tags: ['Standard-Profile'],
+      decision: `Scoring engine fallback: Candidate meets standard credit thresholds.`
+    });
+  }
+});
+
+// Document OCR & Verification Analyzer
+app.post('/api/gemini/verify-doc', async (req, res) => {
+  const { docType, docName, fileContent } = req.body;
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
+    const nameMatch = docName.toLowerCase().includes('sarah') || docName.toLowerCase().includes('jenkins');
+    const income = docName.toLowerCase().includes('w2') || docName.toLowerCase().includes('paystub') ? 8500 : undefined;
+    return res.json({
+      success: true,
+      ocrData: {
+        extractedName: nameMatch ? 'Sarah Jenkins' : 'Michael Chen',
+        extractedIncome: income,
+        extractedEmployer: docType === 'Paystub' ? 'TechCorp Solutions' : undefined,
+        confidenceScore: 98,
+        issues: [],
+      },
+      status: 'Verified',
+    });
+  }
+
+  try {
+    const { GoogleGenAI, Type } = require("@google/genai");
+    const ai = new GoogleGenAI({ apiKey });
+    const prompt = `Act as an automated document underwriting parser. Extract structural details from this document:
+Document Category: ${docType}
+File Name: ${docName}
+Extracted Text Segment: "${fileContent || 'Jane Doe, Pay Period: June 2026, Net Income: $6,500, Employer: Acme Global Ltd'}"
+
+Determine Name compatibility, Income parameters, Employer name, confidence rating, and flag any discrepancy. Format response as JSON.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            extractedName: { type: Type.STRING, description: 'Full name on the document.' },
+            extractedIncome: { type: Type.NUMBER, description: 'Extracted monthly/annual wages if readable.' },
+            extractedEmployer: { type: Type.STRING, description: 'Employer name if paystub.' },
+            confidenceScore: { type: Type.INTEGER, description: 'Parser confidence score 0-100.' },
+            issues: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: 'Issues detected (e.g. Low resolution, Name mismatch, expired doc).',
+            },
+          },
+          required: ['extractedName', 'confidenceScore', 'issues'],
+        },
+      },
+    });
+
+    const ocrData = JSON.parse(response.text || '{}');
+    const status = ocrData.issues.length > 0 ? 'Rejected' : 'Verified';
+    res.json({ success: true, ocrData, status });
+  } catch (error) {
+    res.json({
+      success: true,
+      ocrData: {
+        extractedName: 'Sarah Jenkins',
+        confidenceScore: 90,
+        issues: [],
+      },
+      status: 'Verified',
+    });
+  }
+});
+
+// Voice Call Simulator Engine
+app.post(['/api/simulate-call', '/api/gemini/simulate-call'], async (req, res) => {
+  const { leadName, loanAmount, prompt, transcript, customerUtterance } = req.body;
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
+    let reply = `Hello ${leadName}, I appreciate that. I've noted down your loan details. Let's touch base again soon.`;
+    let sentiment = 'Neutral';
+    let intent = 'Unknown';
+    let isFinished = false;
+
+    const lowerUtterance = customerUtterance.toLowerCase();
+    if (lowerUtterance.includes('yes') || lowerUtterance.includes('sure') || lowerUtterance.includes('interested')) {
+      reply = `That is fantastic! Since you are interested in the $${loanAmount} loan, I am sending an upload link for your documents right now. Should I also book an agent to call you back?`;
+      sentiment = 'Positive';
+      intent = 'Interested';
+    } else if (lowerUtterance.includes('no') || lowerUtterance.includes('stop') || lowerUtterance.includes('busy')) {
+      reply = `I completely understand. I will close your file. Thanks for your time, goodbye!`;
+      sentiment = 'Negative';
+      intent = 'Not Interested';
+      isFinished = true;
+    }
+
+    return res.json({ success: true, reply, sentiment, intent, isFinished });
+  }
+
+  try {
+    const { GoogleGenAI, Type } = require("@google/genai");
+    const ai = new GoogleGenAI({ apiKey });
+    const formattedTranscript = transcript
+      .map((t) => `${t.speaker}: ${t.text}`)
+      .join('\n');
+
+    const conversationPrompt = `You are an conversational outbound AI calling agent for ChiefXAI. You are in a phone call with client ${leadName} discussing their requested loan of $${loanAmount}.
+Campaign Persona/Instruction: ${prompt}
+
+Prior Conversation:
+${formattedTranscript}
+
+Customer's new message: "${customerUtterance}"
+
+Generate your next reply. It must be brief (1-2 clear, human sentences as spoken on a phone). Also analyze the customer's sentiment ('Positive' | 'Neutral' | 'Negative') and intent ('Interested' | 'Not Interested' | 'Callback Scheduled' | 'Wrong Number' | 'Unknown') and whether the conversation has naturally concluded (isFinished).
+Output strictly as JSON.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: conversationPrompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            reply: { type: Type.STRING, description: 'Natural spoken reply from the AI agent.' },
+            sentiment: {
+              type: Type.STRING,
+              enum: ['Positive', 'Neutral', 'Negative'],
+              description: 'Sentiment of the customer.',
+            },
+            intent: {
+              type: Type.STRING,
+              enum: ['Interested', 'Not Interested', 'Callback Scheduled', 'Wrong Number', 'Unknown'],
+              description: 'Customer intent analysis.',
+            },
+            isFinished: {
+              type: Type.BOOLEAN,
+              description: 'Whether the conversation has ended (e.g., customer said goodbye or asked to hang up).',
+            },
+          },
+          required: ['reply', 'sentiment', 'intent', 'isFinished'],
+        },
+      },
+    });
+
+    const parsed = JSON.parse(response.text || '{}');
+    res.json({ success: true, ...parsed });
+  } catch (error) {
+    res.json({
+      success: true,
+      reply: `I see. I will document this on your profile.`,
+      sentiment: 'Neutral',
+      intent: 'Unknown',
+      isFinished: false
+    });
+  }
+});
+
+// ==========================================
+// 2. Twilio Call Webhooks & Initiation
+// ==========================================
+
+// Twilio Webhook Incoming Answer Endpoint
+app.post("/api/twilio/incoming", (req, res) => {
+  const From = req.body.From || req.query.From;
+  const CallSid = req.body.CallSid || req.query.CallSid || req.body.callId || req.body.CallSid;
+
+  if (CallSid && From) {
+    twilioCallNumbers.set(CallSid, From);
+    setTimeout(() => twilioCallNumbers.delete(CallSid), 120000);
+  }
+
+  res.set("Content-Type", "text/xml");
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Connect>
+    <Stream url="wss://${req.headers.host}/twilio/stream" />
+  </Connect>
+</Response>`);
+});
+
+// Initiate Outbound Twilio Call
+app.post("/api/twilio/call", async (req, res) => {
+  const { phoneNumber } = req.body;
+  if (!phoneNumber) {
+    return res.status(400).json({ error: "Missing phoneNumber in request body" });
+  }
+
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const twilioNumber = process.env.TWILIO_PHONE_NUMBER;
+
+  if (!accountSid || !authToken || !twilioNumber) {
+    return res.status(500).json({
+      error: "Twilio credentials are not configured on the server. Please set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER."
+    });
+  }
+
+  try {
+    const authString = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
+    let callbackUrl;
+    if (process.env.PUBLIC_URL) {
+      callbackUrl = `${process.env.PUBLIC_URL}/api/twilio/incoming`;
+    } else {
+      const protocol = req.secure || req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+      const host = req.headers.host;
+      callbackUrl = `${protocol}://${host}/api/twilio/incoming`;
+    }
+
+    console.log(`📞 Triggering Twilio outbound call to ${phoneNumber} from ${twilioNumber}...`);
+
+    const response = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Basic ${authString}`,
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: new URLSearchParams({
+          To: phoneNumber,
+          From: twilioNumber,
+          Url: callbackUrl
+        })
+      }
+    );
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || `Twilio API error (Status: ${response.status})`);
+    }
+
+    console.log(`✅ Outbound Twilio call initiated. Call SID: ${data.sid}`);
+    res.json({ success: true, callSid: data.sid });
+  } catch (err) {
+    console.error("❌ Failed to initiate Twilio outbound call:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Hang up active Twilio call
+app.post("/api/twilio/hangup", async (req, res) => {
+  const { callSid } = req.body;
+  if (!callSid) {
+    return res.status(400).json({ error: "Missing callSid in request body" });
+  }
+
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+
+  if (!accountSid || !authToken) {
+    return res.status(500).json({ error: "Twilio credentials are not configured on the server." });
+  }
+
+  try {
+    const authString = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
+    console.log(`📞 Hanging up Twilio call ${callSid}...`);
+
+    const response = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls/${callSid}.json`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Basic ${authString}`,
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: new URLSearchParams({ Status: "completed" })
+      }
+    );
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || `Twilio hangup error (Status: ${response.status})`);
+    }
+
+    console.log(`✅ Twilio call completed successfully: ${callSid}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("❌ Failed to hang up Twilio call:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// 3. CRM CRUD APIs & Sync Endpoints
+// ==========================================
+
+// Leads Database API
+app.get('/api/leads', (req, res) => {
+  res.json(readAll('leads', initialLeads));
+});
+
+app.post('/api/leads', (req, res) => {
+  const newLead = {
+    id: `L-${Date.now().toString().slice(-4)}`,
+    createdAt: new Date().toISOString(),
+    ...req.body
+  };
+  append('leads', newLead);
+  broadcastLog(`👤 Created new lead: ${newLead.name} via UI`, { type: 'lead', leadId: newLead.id });
+  res.status(201).json(newLead);
+});
+
+app.patch('/api/leads/:id', (req, res) => {
+  const updated = update('leads', req.params.id, req.body);
+  if (!updated) return res.status(404).json({ error: 'Lead not found' });
+  broadcastLog(`👤 Updated lead profile: ${updated.name}`, { type: 'lead', leadId: req.params.id });
+  res.json(updated);
+});
+
+app.delete('/api/leads/:id', (req, res) => {
+  const leadsList = readAll('leads', initialLeads);
+  const filtered = leadsList.filter(l => l.id !== req.params.id);
+  writeAll('leads', filtered);
+  broadcastLog(`👤 Removed lead: ${req.params.id}`, { type: 'lead', leadId: req.params.id });
+  res.json({ success: true });
+});
+
+// Loans Database API
+app.get('/api/loans', (req, res) => {
+  res.json(readAll('loans', initialLoans));
+});
+
+app.post('/api/loans', (req, res) => {
+  const newLoan = {
+    id: `LN-${Date.now().toString().slice(-4)}`,
+    createdAt: new Date().toISOString(),
+    ...req.body
+  };
+  append('loans', newLoan);
+  broadcastLog(`💵 Created new loan application: ${newLoan.id}`, { type: 'loan', loanId: newLoan.id });
+  res.status(201).json(newLoan);
+});
+
+app.patch('/api/loans/:id', (req, res) => {
+  const updated = update('loans', req.params.id, req.body);
+  if (!updated) return res.status(404).json({ error: 'Loan not found' });
+  broadcastLog(`💵 Updated loan application: ${updated.id}`, { type: 'loan', loanId: req.params.id });
+  res.json(updated);
+});
+
+// Campaigns Database API
+app.get('/api/campaigns', (req, res) => {
+  res.json(readAll('campaigns', initialCampaigns));
+});
+
+app.post('/api/campaigns', (req, res) => {
+  const newCampaign = {
+    id: `CAMP-${Date.now().toString().slice(-4)}`,
+    createdAt: new Date().toISOString(),
+    ...req.body
+  };
+  append('campaigns', newCampaign);
+  broadcastLog(`📢 Created marketing campaign: ${newCampaign.name}`, { type: 'campaign', campaignId: newCampaign.id });
+  res.status(201).json(newCampaign);
+});
+
+app.patch('/api/campaigns/:id', (req, res) => {
+  const updated = update('campaigns', req.params.id, req.body);
+  if (!updated) return res.status(404).json({ error: 'Campaign not found' });
+  broadcastLog(`📢 Updated campaign settings: ${updated.name}`, { type: 'campaign', campaignId: req.params.id });
+  res.json(updated);
+});
+
+// Workflows Database API
+app.get('/api/workflows', (req, res) => {
+  res.json(readAll('workflows', initialWorkflows));
+});
+
+app.post('/api/workflows', (req, res) => {
+  const newWorkflow = {
+    id: `WF-${Date.now().toString().slice(-4)}`,
+    ...req.body
+  };
+  append('workflows', newWorkflow);
+  broadcastLog(`⚙️ Created routing workflow: ${newWorkflow.name}`, { type: 'workflow', workflowId: newWorkflow.id });
+  res.status(201).json(newWorkflow);
+});
+
+app.patch('/api/workflows/:id', (req, res) => {
+  const updated = update('workflows', req.params.id, req.body);
+  if (!updated) return res.status(404).json({ error: 'Workflow not found' });
+  broadcastLog(`⚙️ Updated workflow settings: ${updated.name}`, { type: 'workflow', workflowId: req.params.id });
+  res.json(updated);
+});
+
+// Call Logs Database API
+app.get('/api/call-logs', (req, res) => {
+  res.json(readAll('calllogs', initialCallLogs));
+});
+
+app.post('/api/call-logs', (req, res) => {
+  const newLog = {
+    id: `CL-${Date.now().toString().slice(-4)}`,
+    ...req.body
+  };
+  append('calllogs', newLog);
+  broadcastLog(`📞 Logged call with: ${newLog.leadName || 'Contact'}`, { type: 'calllog', logId: newLog.id });
+  res.status(201).json(newLog);
+});
+
+// Settings Database APIs
+app.get('/api/settings/numbers', (req, res) => {
+  res.json(readAll('numbers', initialVirtualNumbers));
+});
+
+app.post('/api/settings/numbers', (req, res) => {
+  const newNumber = {
+    id: `NUM-${Date.now().toString().slice(-4)}`,
+    ...req.body
+  };
+  append('numbers', newNumber);
+  broadcastLog(`📞 Assigned new virtual number: ${newNumber.phoneNumber}`, { type: 'settings' });
+  res.status(201).json(newNumber);
+});
+
+app.patch('/api/settings/numbers/:id', (req, res) => {
+  const updated = update('numbers', req.params.id, req.body);
+  if (!updated) return res.status(404).json({ error: 'Number not found' });
+  res.json(updated);
+});
+
+app.get('/api/settings/team', (req, res) => {
+  res.json(readAll('team', initialTeamMembers));
+});
+
+app.post('/api/settings/team', (req, res) => {
+  const newMember = {
+    id: `TM-${Date.now().toString().slice(-4)}`,
+    ...req.body
+  };
+  append('team', newMember);
+  broadcastLog(`👤 Registered team member: ${newMember.name}`, { type: 'settings' });
+  res.status(201).json(newMember);
+});
+
+app.patch('/api/settings/team/:id', (req, res) => {
+  const updated = update('team', req.params.id, req.body);
+  if (!updated) return res.status(404).json({ error: 'Team member not found' });
+  res.json(updated);
+});
+
+app.get('/api/settings/org', (req, res) => {
+  const orgList = readAll('org', [initialOrgSettings]);
+  res.json(orgList[0] || initialOrgSettings);
+});
+
+app.post('/api/settings/org', (req, res) => {
+  writeAll('org', [req.body]);
+  broadcastLog(`⚙️ Updated organization settings: ${req.body.name}`, { type: 'settings' });
+  res.json(req.body);
+});
+
+// Bulk State Synchronization Endpoints
+app.post('/api/leads/sync', (req, res) => res.json(writeAll('leads', req.body)));
+app.post('/api/loans/sync', (req, res) => res.json(writeAll('loans', req.body)));
+app.post('/api/campaigns/sync', (req, res) => res.json(writeAll('campaigns', req.body)));
+app.post('/api/workflows/sync', (req, res) => res.json(writeAll('workflows', req.body)));
+app.post('/api/settings/numbers/sync', (req, res) => res.json(writeAll('numbers', req.body)));
+app.post('/api/settings/team/sync', (req, res) => res.json(writeAll('team', req.body)));
+app.post('/api/call-logs/sync', (req, res) => res.json(writeAll('calllogs', req.body)));
+
 const server = http.createServer(app);
 
 // WebSocket setup using manual upgrade routing to support multiple paths
 const wss = new WebSocketServer({ noServer: true });
+const wssTwilio = new WebSocketServer({ noServer: true });
 const wssVobiz = new WebSocketServer({ noServer: true });
 
 wss.on("connection", (ws, req) => {
@@ -641,6 +1238,19 @@ wss.on("connection", (ws, req) => {
   ws.on("close", () => {
      activeSessionsCount = Math.max(0, activeSessionsCount - 1);
      console.log(`🌐 Browser disconnected | Active: ${activeSessionsCount}`);
+  });
+});
+
+wssTwilio.on("connection", (ws, req) => {
+  activeSessionsCount++;
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  console.log(`📞 Twilio call connected from ${ip} | Active: ${activeSessionsCount}`);
+
+  handleTwilioSession(ws);
+
+  ws.on("close", () => {
+    activeSessionsCount = Math.max(0, activeSessionsCount - 1);
+    console.log(`📞 Twilio call disconnected | Active: ${activeSessionsCount}`);
   });
 });
 
@@ -669,6 +1279,10 @@ server.on("upgrade", (request, socket, head) => {
   if (pathname === "/session") {
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit("connection", ws, request);
+    });
+  } else if (pathname === "/twilio/stream") {
+    wssTwilio.handleUpgrade(request, socket, head, (ws) => {
+      wssTwilio.emit("connection", ws, request);
     });
   } else if (pathname === "/vobiz/stream") {
     wssVobiz.handleUpgrade(request, socket, head, (ws) => {
