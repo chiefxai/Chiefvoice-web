@@ -348,7 +348,7 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
   };
 
   const session = await genai.live.connect({
-    model: "gemini-2.0-flash-exp",
+    model: "gemini-2.5-flash-native-audio-latest",
     config: {
       systemInstruction: {
         parts: [{ text: systemPrompt }]
