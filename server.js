@@ -694,7 +694,11 @@ app.get("/list-models", async (req, res) => {
       allModelNames: allModels.map(m => m.name)
     });
   } catch (err) {
-    res.status(500).json({ error: err.function getHtmlTemplate(subject, body) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+function getHtmlTemplate(subject, body) {
   return `<!DOCTYPE html>
 <html>
 <head>
