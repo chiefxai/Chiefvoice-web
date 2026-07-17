@@ -110,6 +110,12 @@ async function handleVobizSession(vobizWs) {
   const recordStream = fs.createWriteStream(tempPcmPath);
   const transcriptLines = [];
 
+  // ── Contact capture state (used when Gemini doesn't fire a toolCall) ───────
+  let capturedEmail   = null;
+  let capturedPhone   = null;
+  let sendEmailPending   = false;  // set when caller asked for email
+  let sendWhatsAppPending = false; // set when caller asked for WhatsApp
+
   const activeConfig = getConfig();
   const voiceName = VOICE_MAP[activeConfig.activeVoice] || "Puck";
 
@@ -521,15 +527,30 @@ async function openGeminiSession(vobizWs, voiceName, systemPrompt, recordStream,
     },
     callbacks: {
       onmessage: async (response) => {
-        console.log("📥 Raw Gemini response:", JSON.stringify(response).slice(0, 300));
-
-        // Handle tool calls from Gemini (RAG search or saving questionnaire answers)
+        // Full response key logging so we can debug what Gemini actually sends
+        const responseKeys = Object.keys(response || {});
+        if (responseKeys.includes('toolCall') || responseKeys.includes('serverContent')) {
+          console.log("📥 Gemini response keys:", responseKeys.join(', '));
+        }
         if (response.toolCall) {
-          const functionCalls = response.toolCall.functionCalls;
-          const functionResponses = [];
+          console.log("🛠️ toolCall detected:", JSON.stringify(response.toolCall).slice(0, 500));
+        }
 
-          for (const call of functionCalls) {
-            console.log(`🛠️ Vobiz Tool Call: Executing ${call.name}`);
+        // ── PRIMARY: top-level toolCall (standard Gemini Live path)
+        const topLevelCalls = response.toolCall?.functionCalls || [];
+
+        // ── SECONDARY: functionCall parts inside modelTurn (alternate Live API path)
+        const modelTurnParts = response.serverContent?.modelTurn?.parts || [];
+        const embeddedCalls = modelTurnParts
+          .filter(p => p.functionCall)
+          .map(p => ({ id: p.functionCall.id || `fn_${Date.now()}`, name: p.functionCall.name, args: p.functionCall.args }));
+
+        const allFunctionCalls = [...topLevelCalls, ...embeddedCalls];
+
+        if (allFunctionCalls.length > 0) {
+          const functionResponses = [];
+          for (const call of allFunctionCalls) {
+            console.log(`🛠️ Vobiz Tool Call: Executing ${call.name}`, JSON.stringify(call.args || {}));
             let result = {};
             if (call.name === "search_policy_knowledge_base") {
               result = await handleSearchPolicyKnowledgeBase(call.args.query);
@@ -597,6 +618,62 @@ async function openGeminiSession(vobizWs, voiceName, systemPrompt, recordStream,
           transcriptLines.push({ role: "user", text });
           if (global.broadcastLog) {
             global.broadcastLog(`👤 Caller: "${text}"`, { type: "transcript", role: "user", text });
+          }
+
+          // ── Transcript-based contact capture (safety net if Gemini skips toolCall) ──
+          const lowerText = text.toLowerCase();
+
+          // Detect if the caller is asking to receive something
+          if (/send|email|gmail|whatsapp|share|forward/.test(lowerText)) {
+            if (/email|gmail/.test(lowerText)) sendEmailPending = true;
+            if (/whatsapp|watsapp|what'?s ?app|phone|number|mobile/.test(lowerText)) sendWhatsAppPending = true;
+          }
+
+          // Detect email address spoken by caller (e.g. "brittosamjosej@gmail.com")
+          const emailMatch = text.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
+          if (emailMatch) {
+            capturedEmail = emailMatch[0].toLowerCase();
+            console.log(`📧 Captured email from transcript: ${capturedEmail}`);
+          }
+
+          // Detect phone number spoken by caller (10+ digits, optional country code)
+          const phoneDigits = text.replace(/[^\d]/g, '');
+          if (phoneDigits.length >= 10) {
+            capturedPhone = phoneDigits.length === 10 ? `91${phoneDigits}` : phoneDigits;
+            console.log(`📱 Captured phone from transcript: ${capturedPhone}`);
+          }
+
+          // Auto-fire email if we now have everything needed
+          if (sendEmailPending && capturedEmail) {
+            console.log(`✅ Auto-triggering email send to ${capturedEmail} (transcript capture)`);
+            sendEmailPending = false;
+            const summaryBody = transcriptLines
+              .filter(l => l.role === 'ai')
+              .map(l => l.text)
+              .join(' ')
+              .slice(0, 2000);
+            handleSendEmailDocument(
+              capturedEmail,
+              "Your ChiefVoice Summary",
+              summaryBody || "Thank you for calling. Please find your details below.",
+              "call_summary"
+            ).then(r => console.log(`📧 Auto-email result:`, JSON.stringify(r)));
+          }
+
+          // Auto-fire WhatsApp if we now have phone
+          if (sendWhatsAppPending && capturedPhone) {
+            console.log(`✅ Auto-triggering WhatsApp send to ${capturedPhone} (transcript capture)`);
+            sendWhatsAppPending = false;
+            const summaryMsg = transcriptLines
+              .filter(l => l.role === 'ai')
+              .map(l => l.text)
+              .join(' ')
+              .slice(0, 1000);
+            handleSendWhatsappMessage(
+              capturedPhone,
+              summaryMsg || "Thank you for calling ChiefVoice. Your details have been noted.",
+              null, null
+            ).then(r => console.log(`💬 Auto-WhatsApp result:`, JSON.stringify(r)));
           }
         }
         if (response.serverContent?.outputTranscription?.text) {
