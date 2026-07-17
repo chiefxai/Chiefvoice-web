@@ -159,6 +159,40 @@ if (supabaseUrl && supabaseKey && isValidHttpUrl(supabaseUrl)) {
   console.log("⚠️ Supabase credentials missing or invalid — database features disabled");
 }
 
+// Supabase state backup & restoration helpers
+async function restoreStateFromSupabase() {
+  if (!supabase) return;
+  try {
+    console.log("🔄 Restoring CRM state from Supabase...");
+    const { data, error } = await supabase.from("crm_state").select("*");
+    if (error) {
+      console.warn("⚠️ Could not restore state from Supabase (table 'crm_state' might not exist):", error.message);
+      return;
+    }
+    if (data && data.length > 0) {
+      for (const row of data) {
+        console.log(`📥 Restored ${row.key} from Supabase.`);
+        writeAll(row.key, row.value);
+      }
+    }
+  } catch (err) {
+    console.error("❌ Error restoring state from Supabase:", err.message);
+  }
+}
+
+function syncToSupabase(key, value) {
+  if (supabase) {
+    supabase.from("crm_state").upsert({ key, value }).catch(err => {
+      console.warn(`⚠️ Failed to upsert ${key} to Supabase:`, err.message);
+    });
+  }
+}
+
+if (supabase) {
+  restoreStateFromSupabase();
+}
+
+
 // Track active sessions in real-time
 let activeSessionsCount = 0;
 
@@ -1227,13 +1261,41 @@ app.post('/api/settings/org', (req, res) => {
 });
 
 // Bulk State Synchronization Endpoints
-app.post('/api/leads/sync', (req, res) => res.json(writeAll('leads', req.body)));
-app.post('/api/loans/sync', (req, res) => res.json(writeAll('loans', req.body)));
-app.post('/api/campaigns/sync', (req, res) => res.json(writeAll('campaigns', req.body)));
-app.post('/api/workflows/sync', (req, res) => res.json(writeAll('workflows', req.body)));
-app.post('/api/settings/numbers/sync', (req, res) => res.json(writeAll('numbers', req.body)));
-app.post('/api/settings/team/sync', (req, res) => res.json(writeAll('team', req.body)));
-app.post('/api/call-logs/sync', (req, res) => res.json(writeAll('calllogs', req.body)));
+app.post('/api/leads/sync', (req, res) => {
+  writeAll('leads', req.body);
+  syncToSupabase('leads', req.body);
+  res.json(req.body);
+});
+app.post('/api/loans/sync', (req, res) => {
+  writeAll('loans', req.body);
+  syncToSupabase('loans', req.body);
+  res.json(req.body);
+});
+app.post('/api/campaigns/sync', (req, res) => {
+  writeAll('campaigns', req.body);
+  syncToSupabase('campaigns', req.body);
+  res.json(req.body);
+});
+app.post('/api/workflows/sync', (req, res) => {
+  writeAll('workflows', req.body);
+  syncToSupabase('workflows', req.body);
+  res.json(req.body);
+});
+app.post('/api/settings/numbers/sync', (req, res) => {
+  writeAll('numbers', req.body);
+  syncToSupabase('numbers', req.body);
+  res.json(req.body);
+});
+app.post('/api/settings/team/sync', (req, res) => {
+  writeAll('team', req.body);
+  syncToSupabase('team', req.body);
+  res.json(req.body);
+});
+app.post('/api/call-logs/sync', (req, res) => {
+  writeAll('calllogs', req.body);
+  syncToSupabase('calllogs', req.body);
+  res.json(req.body);
+});
 
 // SPA fallback routing
 app.get("*", (req, res, next) => {
