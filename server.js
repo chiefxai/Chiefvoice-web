@@ -185,9 +185,16 @@ app.post("/api/vobiz/incoming", (req, res) => {
 
 // Initiate Outbound Vobiz Call to User's Phone
 app.post("/api/vobiz/call", async (req, res) => {
-  const { phoneNumber } = req.body;
+  const { phoneNumber, questions } = req.body;
   if (!phoneNumber) {
     return res.status(400).json({ error: "Missing phoneNumber in request body" });
+  }
+
+  // Register dynamic call questions if provided
+  if (questions && Array.isArray(questions) && questions.length > 0) {
+    const { vobizCallQuestions } = require("./services/vobizProxy");
+    const sanitizedNumber = phoneNumber.replace(/[\s\-\(\)\+]+/g, "");
+    vobizCallQuestions.set(sanitizedNumber, questions);
   }
 
   const authId = process.env.VOBIZ_AUTH_ID;
@@ -942,9 +949,16 @@ app.post("/api/twilio/incoming", (req, res) => {
 
 // Initiate Outbound Twilio Call
 app.post("/api/twilio/call", async (req, res) => {
-  const { phoneNumber } = req.body;
+  const { phoneNumber, questions } = req.body;
   if (!phoneNumber) {
     return res.status(400).json({ error: "Missing phoneNumber in request body" });
+  }
+
+  // Register dynamic call questions if provided
+  if (questions && Array.isArray(questions) && questions.length > 0) {
+    const { twilioCallQuestions } = require("./services/twilioProxy");
+    const sanitizedNumber = phoneNumber.replace(/[\s\-\(\)\+]+/g, "");
+    twilioCallQuestions.set(sanitizedNumber, questions);
   }
 
   const accountSid = process.env.TWILIO_ACCOUNT_SID;

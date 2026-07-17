@@ -60,6 +60,7 @@ const VOICE_MAP = {
 
 // In-memory cache for caller phone numbers mapping callId -> From (set in webhook)
 const vobizCallNumbers = new Map();
+const vobizCallQuestions = new Map();
 
 function getWavHeader(dataLength, sampleRate = 16000, channels = 1, bitsPerSample = 16) {
   const h = Buffer.alloc(44);
@@ -134,7 +135,7 @@ When the user answers a question, you must immediately call the tool 'save_quest
 If the user has any policy or general insurance questions at any point during the call, call the 'search_policy_knowledge_base' tool with their search query to get the exact facts and answers. Do not make up any insurance coverage details or terms. Use the retrieved document text to explain.
 `;
 
-  const finalPrompt = buildRuntimePrompt(activeConfig) + "\n" + questionnairePrompt;
+  let geminiSessionPromise = null;
 
   console.log(`📞 New Vobiz voice connection. Voice: ${activeConfig.activeVoice} (${voiceName})`);
 
@@ -142,7 +143,7 @@ If the user has any policy or general insurance questions at any point during th
 
   const triggerGreetingIfReady = async () => {
     if (geminiSetupFinished && streamId) {
-      const geminiSession = await geminiSessionPromise;
+      const geminiSession = geminiSessionPromise ? await geminiSessionPromise : null;
       if (geminiSession) {
         try {
           console.log("👋 Triggering custom warm greeting...");
@@ -171,44 +172,6 @@ If the user has any policy or general insurance questions at any point during th
   let totalInboundAudioBytes = 0;
   let totalOutboundAudioBytes = 0;
 
-  // Start connecting to Gemini asynchronously in the background
-  const geminiSessionPromise = openGeminiSession(
-    vobizWs,
-    voiceName,
-    finalPrompt,
-    recordStream,
-    transcriptLines,
-    generatedCallId,
-    () => streamId,
-    (inTokens, outTokens) => {
-      liveInputTokens += inTokens;
-      liveOutputTokens += outTokens;
-      if (global.broadcastLog) {
-        global.broadcastLog(`🪙 Tokens Spent: Input ${liveInputTokens} | Output ${liveOutputTokens}`, { type: "usage", inputTokens: liveInputTokens, outputTokens: liveOutputTokens });
-      }
-    },
-    (outBytes) => {
-      totalOutboundAudioBytes += outBytes;
-    },
-    () => {
-      geminiSetupFinished = true;
-      triggerGreetingIfReady();
-    },
-    () => vobizCallNumbers.get(callId) || "Vobiz Call"
-  ).then(session => {
-    console.log(`✅ Gemini Live session open for Vobiz | Call ID: ${generatedCallId}`);
-    if (global.broadcastLog) {
-      global.broadcastLog(`📞 Voice Session Open | Call ID: ${generatedCallId}`, { type: "system", callId: generatedCallId });
-    }
-    return session;
-  }).catch(err => {
-    console.error("❌ Gemini session failed for Vobiz:", err.message);
-    recordStream.close();
-    try { fs.unlinkSync(tempPcmPath); } catch {}
-    vobizWs.close();
-    return null;
-  });
-
   let isFinalized = false;
 
   vobizWs.on("message", async (rawMsg) => {
@@ -231,7 +194,72 @@ If the user has any policy or general insurance questions at any point during th
           streamId = msg.start.streamId;
           callId = msg.start.callId;
           console.log(`🚀 Vobiz Stream started: ${streamId} | CallId: ${callId}`);
-          triggerGreetingIfReady();
+          
+          // Resolve caller number and fetch custom questions
+          const resolvedPhone = vobizCallNumbers.get(callId) || "";
+          const sanitizedPhone = resolvedPhone.replace(/[\s\-\(\)\+]+/g, "");
+          const customQuestions = sanitizedPhone ? vobizCallQuestions.get(sanitizedPhone) : null;
+          
+          let activeQuestions = questionsList;
+          if (customQuestions && Array.isArray(customQuestions) && customQuestions.length > 0) {
+            console.log(`ℹ️ Using dynamic campaign questions for Vobiz call:`, customQuestions);
+            activeQuestions = customQuestions;
+            // Clean up from memory
+            vobizCallQuestions.delete(sanitizedPhone);
+          }
+
+          const dynamicQuestionnairePrompt = `
+══════════════════════════════════════════
+MANDATORY QUESTIONNAIRE PROTOCOL
+══════════════════════════════════════════
+You are an insurance agent collecting leads. You MUST ask the caller the following questions ONE BY ONE. Do NOT ask them all at once. Wait for their response for each question:
+${activeQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")}
+
+When the user answers a question, you must immediately call the tool 'save_question_response' with the exact question you asked and the answer they gave, and then move to the next question.
+
+If the user has any policy or general insurance questions at any point during the call, call the 'search_policy_knowledge_base' tool with their search query to get the exact facts and answers. Do not make up any insurance coverage details or terms. Use the retrieved document text to explain.
+`;
+
+          const finalPrompt = buildRuntimePrompt(activeConfig) + "\n" + dynamicQuestionnairePrompt;
+
+          // Connect to Gemini asynchronously in the background
+          geminiSessionPromise = openGeminiSession(
+            vobizWs,
+            voiceName,
+            finalPrompt,
+            recordStream,
+            transcriptLines,
+            generatedCallId,
+            () => streamId,
+            (inTokens, outTokens) => {
+              liveInputTokens += inTokens;
+              liveOutputTokens += outTokens;
+              if (global.broadcastLog) {
+                global.broadcastLog(`🪙 Tokens Spent: Input ${liveInputTokens} | Output ${liveOutputTokens}`, { type: "usage", inputTokens: liveInputTokens, outputTokens: liveOutputTokens });
+              }
+            },
+            (outBytes) => {
+              totalOutboundAudioBytes += outBytes;
+            },
+            () => {
+              geminiSetupFinished = true;
+              triggerGreetingIfReady();
+            },
+            () => resolvedPhone || "Vobiz Call"
+          ).then(session => {
+            console.log(`✅ Gemini Live session open for Vobiz | Call ID: ${generatedCallId}`);
+            if (global.broadcastLog) {
+              global.broadcastLog(`📞 Voice Session Open | Call ID: ${generatedCallId}`, { type: "system", callId: generatedCallId });
+            }
+            return session;
+          }).catch(err => {
+            console.error("❌ Gemini session failed for Vobiz:", err.message);
+            recordStream.close();
+            try { fs.unlinkSync(tempPcmPath); } catch {}
+            vobizWs.close();
+            return null;
+          });
+
           break;
 
         case "media":

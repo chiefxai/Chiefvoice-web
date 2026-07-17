@@ -51,6 +51,7 @@ const VOICE_MAP = {
 
 // In-memory cache for caller phone numbers mapping CallSid -> From (set in webhook)
 const twilioCallNumbers = new Map();
+const twilioCallQuestions = new Map();
 
 function getWavHeader(dataLength, sampleRate = 16000, channels = 1, bitsPerSample = 16) {
   const h = Buffer.alloc(44);
@@ -125,7 +126,7 @@ When the user answers a question, you must immediately call the tool 'save_quest
 If the user has any policy or general insurance questions at any point during the call, call the 'search_policy_knowledge_base' tool with their search query to get the exact facts and answers. Do not make up any insurance coverage details or terms. Use the retrieved document text to explain.
 `;
 
-  const finalPrompt = buildRuntimePrompt(activeConfig) + "\n" + questionnairePrompt;
+  let geminiSessionPromise = null;
 
   console.log(`📞 New Twilio voice connection. Voice: ${activeConfig.activeVoice} (${voiceName})`);
 
@@ -133,7 +134,7 @@ If the user has any policy or general insurance questions at any point during th
 
   const triggerGreetingIfReady = async () => {
     if (geminiSetupFinished && streamSid) {
-      const geminiSession = await geminiSessionPromise;
+      const geminiSession = geminiSessionPromise ? await geminiSessionPromise : null;
       if (geminiSession) {
         try {
           console.log("👋 Triggering custom warm greeting...");
@@ -162,44 +163,6 @@ If the user has any policy or general insurance questions at any point during th
   let totalInboundAudioBytes = 0;
   let totalOutboundAudioBytes = 0;
 
-  // Start connecting to Gemini asynchronously in the background
-  const geminiSessionPromise = openGeminiSession(
-    twilioWs,
-    voiceName,
-    finalPrompt,
-    recordStream,
-    transcriptLines,
-    callId,
-    () => streamSid,
-    (inTokens, outTokens) => {
-      liveInputTokens += inTokens;
-      liveOutputTokens += outTokens;
-      if (global.broadcastLog) {
-        global.broadcastLog(`🪙 Tokens Spent: Input ${liveInputTokens} | Output ${liveOutputTokens}`, { type: "usage", inputTokens: liveInputTokens, outputTokens: liveOutputTokens });
-      }
-    },
-    (outBytes) => {
-      totalOutboundAudioBytes += outBytes;
-    },
-    () => {
-      geminiSetupFinished = true;
-      triggerGreetingIfReady();
-    },
-    () => twilioCallNumbers.get(callSid) || "Twilio Call"
-  ).then(session => {
-    console.log(`✅ Gemini Live session open for Twilio | Call ID: ${callId}`);
-    if (global.broadcastLog) {
-      global.broadcastLog(`📞 Voice Session Open | Call ID: ${callId}`, { type: "system", callId });
-    }
-    return session;
-  }).catch(err => {
-    console.error("❌ Gemini session failed for Twilio:", err.message);
-    recordStream.close();
-    try { fs.unlinkSync(tempPcmPath); } catch {}
-    twilioWs.close();
-    return null;
-  });
-
   let isFinalized = false;
 
   twilioWs.on("message", async (rawMsg) => {
@@ -212,7 +175,72 @@ If the user has any policy or general insurance questions at any point during th
           streamSid = msg.start.streamSid;
           callSid = msg.start.callSid;
           console.log(`🚀 Twilio Stream started: ${streamSid} | CallSid: ${callSid}`);
-          triggerGreetingIfReady();
+          
+          // Resolve caller number and fetch custom questions
+          const resolvedPhone = twilioCallNumbers.get(callSid) || "";
+          const sanitizedPhone = resolvedPhone.replace(/[\s\-\(\)\+]+/g, "");
+          const customQuestions = sanitizedPhone ? twilioCallQuestions.get(sanitizedPhone) : null;
+          
+          let activeQuestions = questionsList;
+          if (customQuestions && Array.isArray(customQuestions) && customQuestions.length > 0) {
+            console.log(`ℹ️ Using dynamic campaign questions for Twilio call:`, customQuestions);
+            activeQuestions = customQuestions;
+            // Clean up from memory
+            twilioCallQuestions.delete(sanitizedPhone);
+          }
+
+          const dynamicQuestionnairePrompt = `
+══════════════════════════════════════════
+MANDATORY QUESTIONNAIRE PROTOCOL
+══════════════════════════════════════════
+You are an insurance agent collecting leads. You MUST ask the caller the following questions ONE BY ONE. Do NOT ask them all at once. Wait for their response for each question:
+${activeQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")}
+
+When the user answers a question, you must immediately call the tool 'save_question_response' with the exact question you asked and the answer they gave, and then move to the next question.
+
+If the user has any policy or general insurance questions at any point during the call, call the 'search_policy_knowledge_base' tool with their search query to get the exact facts and answers. Do not make up any insurance coverage details or terms. Use the retrieved document text to explain.
+`;
+
+          const finalPrompt = buildRuntimePrompt(activeConfig) + "\n" + dynamicQuestionnairePrompt;
+
+          // Connect to Gemini asynchronously
+          geminiSessionPromise = openGeminiSession(
+            twilioWs,
+            voiceName,
+            finalPrompt,
+            recordStream,
+            transcriptLines,
+            callId,
+            () => streamSid,
+            (inTokens, outTokens) => {
+              liveInputTokens += inTokens;
+              liveOutputTokens += outTokens;
+              if (global.broadcastLog) {
+                global.broadcastLog(`🪙 Tokens Spent: Input ${liveInputTokens} | Output ${liveOutputTokens}`, { type: "usage", inputTokens: liveInputTokens, outputTokens: liveOutputTokens });
+              }
+            },
+            (outBytes) => {
+              totalOutboundAudioBytes += outBytes;
+            },
+            () => {
+              geminiSetupFinished = true;
+              triggerGreetingIfReady();
+            },
+            () => resolvedPhone || "Twilio Call"
+          ).then(session => {
+            console.log(`✅ Gemini Live session open for Twilio | Call ID: ${callId}`);
+            if (global.broadcastLog) {
+              global.broadcastLog(`📞 Voice Session Open | Call ID: ${callId}`, { type: "system", callId });
+            }
+            return session;
+          }).catch(err => {
+            console.error("❌ Gemini session failed for Twilio:", err.message);
+            recordStream.close();
+            try { fs.unlinkSync(tempPcmPath); } catch {}
+            twilioWs.close();
+            return null;
+          });
+
           break;
 
         case "media":
@@ -794,4 +822,4 @@ async function handleSaveQuestionResponse(callId, phone, question, answer) {
   }
 }
 
-module.exports = { handleTwilioSession, twilioCallNumbers };
+module.exports = { handleTwilioSession, twilioCallNumbers, twilioCallQuestions };

@@ -488,7 +488,10 @@ Real Tamil speakers do not say the "correct" written form of a word. They contra
       const res = await fetch('/api/vobiz/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phoneNumber: lead.phone })
+        body: JSON.stringify({
+          phoneNumber: lead.phone,
+          questions: selectedTask ? selectedTask.questions : []
+        })
       });
       const data = await res.json();
       if (data.success && data.callSid) {
@@ -533,7 +536,10 @@ Real Tamil speakers do not say the "correct" written form of a word. They contra
       const res = await fetch('/api/twilio/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phoneNumber: lead.phone })
+        body: JSON.stringify({
+          phoneNumber: lead.phone,
+          questions: selectedTask ? selectedTask.questions : []
+        })
       });
       const data = await res.json();
       if (data.success && data.callSid) {
