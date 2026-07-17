@@ -727,10 +727,15 @@ app.post('/api/integrations/send-email', async (req, res) => {
 
   try {
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false, // upgrade later with STARTTLS
       auth: {
         user: gmailUser,
         pass: gmailPass
+      },
+      tls: {
+        rejectUnauthorized: false
       }
     });
 
