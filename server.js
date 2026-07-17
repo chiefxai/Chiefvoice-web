@@ -721,6 +721,8 @@ app.post('/api/integrations/send-email', async (req, res) => {
   const gmailSender = process.env.GMAIL_USER || email;
 
   if (gmailClientId && gmailClientSecret && gmailRefreshToken) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
     try {
       console.log("✉️ Attempting Gmail REST API delivery (Port 443)...");
       const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
@@ -731,7 +733,8 @@ app.post('/api/integrations/send-email', async (req, res) => {
           client_secret: gmailClientSecret,
           refresh_token: gmailRefreshToken,
           grant_type: "refresh_token"
-        })
+        }).toString(),
+        signal: controller.signal
       });
       const tokenData = await tokenResponse.json();
       if (!tokenResponse.ok || !tokenData.access_token) {
@@ -765,7 +768,8 @@ app.post('/api/integrations/send-email', async (req, res) => {
           "Authorization": `Bearer ${accessToken}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ raw: base64UrlMime })
+        body: JSON.stringify({ raw: base64UrlMime }),
+        signal: controller.signal
       });
 
       const gmailData = await gmailResponse.json();
@@ -777,6 +781,8 @@ app.post('/api/integrations/send-email', async (req, res) => {
       return res.json({ success: true, provider: "gmail_rest", messageId: gmailData.id });
     } catch (err) {
       console.warn("⚠️ Gmail REST API delivery failed, trying other methods:", err.message);
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
