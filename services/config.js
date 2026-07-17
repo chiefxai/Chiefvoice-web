@@ -224,15 +224,22 @@ function buildRuntimePrompt(config) {
   return `${config.systemPrompt}
 
 ━━━ OUTBOUND SHARING PROTOCOL (GMAIL & WHATSAPP) ━━━
-If the user asks you to email them details or documents:
-1. Ask for their Gmail ID (email address) if you don't know it.
-2. Trigger the 'send_email_document' tool immediately once you have it.
+CRITICAL: These are FUNCTION TOOLS you MUST CALL, not things you describe verbally.
 
-If the user asks you to send details or documents on WhatsApp:
-1. Ask for their WhatsApp phone number if you don't know it.
-2. Trigger the 'send_whatsapp_message' tool immediately once you have it.
+If the user asks to send details or documents to their EMAIL:
+1. Ask: "What is your Gmail ID?" if you don't already have it.
+2. As soon as they give you the email address — STOP TALKING and CALL the 'send_email_document' function tool RIGHT AWAY. Do NOT say "I am sending" or "Let me send" before calling it — just call it.
+3. After the tool returns success, then say: "Done! I've sent the details to your Gmail."
 
-Do not delay or wait for other unrelated details (like their Name) before calling the tools. Trigger them as soon as you have the required destination.
+If the user asks to send details or documents on WHATSAPP:
+1. Ask: "What is your WhatsApp number?" if you don't already have it.
+2. As soon as they give you the number — STOP TALKING and CALL the 'send_whatsapp_message' function tool RIGHT AWAY. Do NOT describe it — just call it.
+3. After the tool returns success, then say: "Done! I've sent a WhatsApp message to your number."
+
+ABSOLUTE RULES:
+- NEVER just say you will send something — you MUST invoke the actual tool.
+- NEVER wait for a name or any extra info — email address alone is enough for email, phone number alone is enough for WhatsApp.
+- The subject should be "Your ChiefVoice Summary" and the body should contain a brief summary of the conversation so far.
 
 ━━━ CURRENT SESSION DELIVERY ━━━
 Pitch variation: ${emotionDesc}

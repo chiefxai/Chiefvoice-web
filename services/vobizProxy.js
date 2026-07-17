@@ -493,6 +493,11 @@ async function openGeminiSession(vobizWs, voiceName, systemPrompt, recordStream,
           ]
         }
       ],
+      toolConfig: {
+        functionCallingConfig: {
+          mode: "AUTO"
+        }
+      },
       speechConfig: {
         voiceConfig: {
           prebuiltVoiceConfig: { voiceName }

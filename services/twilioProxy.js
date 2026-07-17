@@ -472,6 +472,11 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
           ]
         }
       ],
+      toolConfig: {
+        functionCallingConfig: {
+          mode: "AUTO"
+        }
+      },
       speechConfig: {
         voiceConfig: {
           prebuiltVoiceConfig: { voiceName }
