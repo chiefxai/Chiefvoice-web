@@ -1,0 +1,9 @@
+{
+  "name": "chiefvoice-email-bridge",
+  "version": "1.0.0",
+  "description": "Serverless SMTP bridge to send Gmail notifications from Vercel.",
+  "main": "api/send-email.js",
+  "dependencies": {
+    "nodemailer": "^6.9.13"
+  }
+}

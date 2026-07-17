@@ -714,7 +714,34 @@ app.post('/api/integrations/send-email', async (req, res) => {
   const emailSubject = subject || "Requested Document from ChiefVoice";
   const emailBody = body || `Hello,\n\nPlease find attached the requested ${documentType || 'document'}.\n\nBest regards,\nChiefVoice Team`;
 
-  // 1. Gmail REST API (Official Google Developer Console Method)
+  // 1. Vercel Serverless Bridge (HTTPS 443 Relay)
+  const vercelEmailUrl = process.env.VERCEL_EMAIL_SERVICE_URL;
+  if (vercelEmailUrl) {
+    try {
+      console.log("✉️ Routing email delivery through Vercel bridge...");
+      const response = await fetch(vercelEmailUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          subject: emailSubject,
+          body: emailBody,
+          gmailUser: process.env.GMAIL_USER,
+          gmailPass: process.env.GMAIL_PASS
+        })
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        throw new Error(data.error || `Vercel Bridge error (Status: ${response.status})`);
+      }
+      console.log(`✅ Email sent successfully via Vercel Bridge`);
+      return res.json({ success: true, provider: "vercel_bridge" });
+    } catch (err) {
+      console.warn("⚠️ Vercel Bridge delivery failed, trying other methods:", err.message);
+    }
+  }
+
+  // 2. Gmail REST API (Official Google Developer Console Method)
   const gmailClientId = process.env.GMAIL_CLIENT_ID;
   const gmailClientSecret = process.env.GMAIL_CLIENT_SECRET;
   const gmailRefreshToken = process.env.GMAIL_REFRESH_TOKEN;
