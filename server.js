@@ -702,8 +702,6 @@ app.get("/list-models", async (req, res) => {
 // Integrations: Gmail & WhatsApp (WasenderAPI)
 // ==========================================
 
-const nodemailer = require("nodemailer");
-
 app.post('/api/integrations/send-email', async (req, res) => {
   const { email, subject, body, documentType } = req.body;
   if (!email) {
@@ -713,11 +711,10 @@ app.post('/api/integrations/send-email', async (req, res) => {
   console.log(`✉️ Outbound Email requested to: ${email} | Subject: ${subject}`);
   broadcastLog(`✉️ AI requested email to ${email} (Subject: ${subject})`, { type: 'email', email });
 
-  const gmailUser = process.env.GMAIL_USER;
-  const gmailPass = process.env.GMAIL_PASS;
+  const resendApiKey = process.env.RESEND_API_KEY;
 
-  if (!gmailUser || !gmailPass) {
-    console.warn("⚠️ GMAIL_USER or GMAIL_PASS not configured in .env. Falling back to simulated email send.");
+  if (!resendApiKey) {
+    console.warn("⚠️ RESEND_API_KEY not configured in .env. Falling back to simulated email send.");
     return res.json({
       success: true,
       simulated: true,
@@ -726,31 +723,36 @@ app.post('/api/integrations/send-email', async (req, res) => {
   }
 
   try {
-    const transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false, // upgrade later with STARTTLS
-      auth: {
-        user: gmailUser,
-        pass: gmailPass
+    const fromEmail = process.env.RESEND_FROM_EMAIL || "ChiefVoice <onboarding@resend.dev>";
+    const emailSubject = subject || "Requested Document from ChiefVoice";
+    const emailBody = body || `Hello,\n\nPlease find attached the requested ${documentType || 'document'}.\n\nBest regards,\nChiefVoice Team`;
+
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${resendApiKey}`,
+        "Content-Type": "application/json"
       },
-      tls: {
-        rejectUnauthorized: false
-      }
+      body: JSON.stringify({
+        from: fromEmail,
+        to: email,
+        subject: emailSubject,
+        text: emailBody,
+        html: `<div style="font-family: sans-serif; line-height: 1.5; color: #333;">
+          <p>${emailBody.replace(/\n/g, "<br/>")}</p>
+        </div>`
+      })
     });
 
-    const mailOptions = {
-      from: gmailUser,
-      to: email,
-      subject: subject || "Requested Document from ChiefXAI",
-      text: body || `Hello,\n\nPlease find attached the requested ${documentType || 'document'}.\n\nBest regards,\nChiefXAI Team`
-    };
+    const data = await response.json();
+    if (!response.ok || data.error) {
+      throw new Error(data.message || data.error?.message || `Resend API error (Status: ${response.status})`);
+    }
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ Email sent successfully: ${info.messageId}`);
-    res.json({ success: true, messageId: info.messageId });
+    console.log(`✅ Email sent successfully via Resend: ${data.id}`);
+    res.json({ success: true, messageId: data.id });
   } catch (err) {
-    console.error("❌ Failed to send email via Gmail:", err.message);
+    console.error("❌ Failed to send email via Resend API:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
