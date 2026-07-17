@@ -416,6 +416,58 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
                 },
                 required: ["question", "answer"]
               }
+            },
+            {
+              name: "send_email_document",
+              description: "Send an email document to the user's Gmail ID. Use this when the user requests a copy of their document, loan package, or summary, and you have confirmed their Gmail ID.",
+              parameters: {
+                type: "OBJECT",
+                properties: {
+                  recipient_email: {
+                    type: "STRING",
+                    description: "The recipient's email address (Gmail ID)"
+                  },
+                  subject: {
+                    type: "STRING",
+                    description: "The subject line of the email"
+                  },
+                  body: {
+                    type: "STRING",
+                    description: "The main body content of the email"
+                  },
+                  document_type: {
+                    type: "STRING",
+                    description: "The type of document being sent (e.g. 'policy brief', 'loan approval')"
+                  }
+                },
+                required: ["recipient_email", "subject", "body"]
+              }
+            },
+            {
+              name: "send_whatsapp_message",
+              description: "Send a WhatsApp message or document link to the user. Use this when the user requests information or a file copy via WhatsApp, and you have confirmed their WhatsApp number.",
+              parameters: {
+                type: "OBJECT",
+                properties: {
+                  whatsapp_number: {
+                    type: "STRING",
+                    description: "The target WhatsApp phone number (with country code)"
+                  },
+                  message: {
+                    type: "STRING",
+                    description: "The text message content to send"
+                  },
+                  document_url: {
+                    type: "STRING",
+                    description: "Optional URL of a document to attach"
+                  },
+                  file_name: {
+                    type: "STRING",
+                    description: "Optional name of the attached file"
+                  }
+                },
+                required: ["whatsapp_number", "message"]
+              }
             }
           ]
         }
@@ -458,6 +510,10 @@ async function openGeminiSession(twilioWs, voiceName, systemPrompt, recordStream
             } else if (call.name === "save_question_response") {
               const phone = getCallerNumber ? getCallerNumber() : "Twilio Call";
               result = await handleSaveQuestionResponse(callId, phone, call.args.question, call.args.answer);
+            } else if (call.name === "send_email_document") {
+              result = await handleSendEmailDocument(call.args.recipient_email, call.args.subject, call.args.body, call.args.document_type);
+            } else if (call.name === "send_whatsapp_message") {
+              result = await handleSendWhatsappMessage(call.args.whatsapp_number, call.args.message, call.args.document_url, call.args.file_name);
             }
             functionResponses.push({
               id: call.id,
@@ -818,6 +874,32 @@ async function handleSaveQuestionResponse(callId, phone, question, answer) {
     return { success: true, saved: true };
   } catch (err) {
     console.error("❌ Questionnaire save failed:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+async function handleSendEmailDocument(email, subject, body, documentType) {
+  try {
+    const response = await fetch(`http://localhost:${process.env.PORT || 8080}/api/integrations/send-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, subject, body, documentType })
+    });
+    return await response.json();
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function handleSendWhatsappMessage(phoneNumber, message, documentUrl, fileName) {
+  try {
+    const response = await fetch(`http://localhost:${process.env.PORT || 8080}/api/integrations/send-whatsapp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phoneNumber, message, documentUrl, fileName })
+    });
+    return await response.json();
+  } catch (err) {
     return { success: false, error: err.message };
   }
 }

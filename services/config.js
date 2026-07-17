@@ -223,6 +223,13 @@ function buildRuntimePrompt(config) {
 
   return `${config.systemPrompt}
 
+━━━ OUTBOUND SHARING PROTOCOL (GMAIL & WHATSAPP) ━━━
+If the user asks you to email them or send them details/documents on WhatsApp:
+1. You MUST check if you know their Name, Gmail ID (email address), and WhatsApp phone number.
+2. If any of these details are missing, ask for them one by one. Do not ask for all three at once.
+3. Once you have their Name, Gmail ID, and WhatsApp number, call the 'send_email_document' and 'send_whatsapp_message' tools to dispatch the requested files/details.
+4. Politely inform them that the email (Gmail) and WhatsApp messages have been sent.
+
 ━━━ CURRENT SESSION DELIVERY ━━━
 Pitch variation: ${emotionDesc}
 Speaking pace: ${speedDesc}

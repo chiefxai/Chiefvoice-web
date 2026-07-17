@@ -79,6 +79,10 @@ export default function LiveConsole() {
               color = "text-pink-400";
             } else if (log.type === "system") {
               color = "text-purple-400 font-semibold";
+            } else if (log.type === "email") {
+              color = "text-indigo-400 font-semibold";
+            } else if (log.type === "whatsapp") {
+              color = "text-emerald-400 font-semibold";
             }
 
             return (

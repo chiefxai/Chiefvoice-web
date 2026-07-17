@@ -699,6 +699,112 @@ app.get("/list-models", async (req, res) => {
 });
 
 // ==========================================
+// Integrations: Gmail & WhatsApp (WasenderAPI)
+// ==========================================
+
+const nodemailer = require("nodemailer");
+
+app.post('/api/integrations/send-email', async (req, res) => {
+  const { email, subject, body, documentType } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: "Missing email address in request" });
+  }
+
+  console.log(`✉️ Outbound Email requested to: ${email} | Subject: ${subject}`);
+  broadcastLog(`✉️ AI requested email to ${email} (Subject: ${subject})`, { type: 'email', email });
+
+  const gmailUser = process.env.GMAIL_USER;
+  const gmailPass = process.env.GMAIL_PASS;
+
+  if (!gmailUser || !gmailPass) {
+    console.warn("⚠️ GMAIL_USER or GMAIL_PASS not configured in .env. Falling back to simulated email send.");
+    return res.json({
+      success: true,
+      simulated: true,
+      message: `Email simulation successful. Details: To: ${email}, Subject: ${subject}`
+    });
+  }
+
+  try {
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: gmailUser,
+        pass: gmailPass
+      }
+    });
+
+    const mailOptions = {
+      from: gmailUser,
+      to: email,
+      subject: subject || "Requested Document from ChiefXAI",
+      text: body || `Hello,\n\nPlease find attached the requested ${documentType || 'document'}.\n\nBest regards,\nChiefXAI Team`
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Email sent successfully: ${info.messageId}`);
+    res.json({ success: true, messageId: info.messageId });
+  } catch (err) {
+    console.error("❌ Failed to send email via Gmail:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/integrations/send-whatsapp', async (req, res) => {
+  const { phoneNumber, message, documentUrl, fileName } = req.body;
+  if (!phoneNumber || !message) {
+    return res.status(400).json({ error: "Missing phoneNumber or message in request" });
+  }
+
+  const sanitizedPhone = phoneNumber.replace(/[\s\-\(\)\+]+/g, "");
+  console.log(`💬 Outbound WhatsApp requested to: ${sanitizedPhone}`);
+  broadcastLog(`💬 AI requested WhatsApp to ${sanitizedPhone} (Msg: "${message.slice(0, 50)}...")`, { type: 'whatsapp', phoneNumber: sanitizedPhone });
+
+  const wasenderApiKey = process.env.WASENDER_API_KEY;
+
+  if (!wasenderApiKey) {
+    console.warn("⚠️ WASENDER_API_KEY not configured in .env. Falling back to simulated WhatsApp send.");
+    return res.json({
+      success: true,
+      simulated: true,
+      message: `WhatsApp simulation successful. Details: To: ${sanitizedPhone}, Msg: "${message}"`
+    });
+  }
+
+  try {
+    const payload = {
+      to: sanitizedPhone,
+      text: message
+    };
+
+    if (documentUrl) {
+      payload.documentUrl = documentUrl;
+      payload.fileName = fileName || "Document";
+    }
+
+    const response = await fetch("https://www.wasenderapi.com/api/send-message", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${wasenderApiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || `WasenderAPI error (Status: ${response.status})`);
+    }
+
+    console.log(`✅ WhatsApp sent successfully. JID: ${data.data?.jid}`);
+    res.json({ success: true, jid: data.data?.jid });
+  } catch (err) {
+    console.error("❌ Failed to send WhatsApp via WasenderAPI:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
 // 1. CRM AI / Gemini endpoints
 // ==========================================
 
