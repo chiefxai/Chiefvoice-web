@@ -180,11 +180,16 @@ async function restoreStateFromSupabase() {
   }
 }
 
-function syncToSupabase(key, value) {
+async function syncToSupabase(key, value) {
   if (supabase) {
-    supabase.from("crm_state").upsert({ key, value }).catch(err => {
-      console.warn(`⚠️ Failed to upsert ${key} to Supabase:`, err.message);
-    });
+    try {
+      const { error } = await supabase.from("crm_state").upsert({ key, value });
+      if (error) {
+        console.warn(`⚠️ Failed to upsert ${key} to Supabase:`, error.message);
+      }
+    } catch (err) {
+      console.warn(`⚠️ Error caught in syncToSupabase for ${key}:`, err.message);
+    }
   }
 }
 
