@@ -844,4 +844,4 @@ async function handleSaveQuestionResponse(callId, phone, question, answer) {
   }
 }
 
-module.exports = { handleVobizSession, vobizCallNumbers };
+module.exports = { handleVobizSession, vobizCallNumbers, vobizCallQuestions };
