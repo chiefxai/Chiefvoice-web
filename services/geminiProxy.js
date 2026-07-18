@@ -265,6 +265,10 @@ async function openGeminiSession(browserWs, voiceName, systemPrompt, recordStrea
         };
         delete payload.setup.realtimeInputConfig;
 
+        // Force enable transcription for both inbound and outbound channels
+        payload.setup.input_audio_transcription = { enabled: true };
+        payload.setup.output_audio_transcription = { enabled: true };
+
         // Set temperature inside the existing generationConfig
         if (!payload.setup.generationConfig) {
           payload.setup.generationConfig = {};

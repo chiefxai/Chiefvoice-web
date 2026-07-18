@@ -384,13 +384,17 @@ async function openGeminiSession(vobizWs, voiceName, systemPrompt, recordStream,
         };
         delete payload.setup.realtimeInputConfig;
 
+        // Force enable transcription for both inbound and outbound channels
+        payload.setup.input_audio_transcription = { enabled: true };
+        payload.setup.output_audio_transcription = { enabled: true };
+
         if (!payload.setup.generationConfig) {
           payload.setup.generationConfig = {};
         }
         payload.setup.generationConfig.temperature = 0.9;
         
         data = JSON.stringify(payload);
-        console.log("⚙️ Vobiz Stream: Intercepted setup payload and injected low-latency VAD config.");
+        console.log("⚙️ Vobiz Stream: Intercepted setup payload, injected low-latency VAD and forced both transcriptions.");
         if (global.broadcastLog) {
           const modelName = isVertex ? "gemini-live-2.5-flash-native-audio" : "gemini-2.5-flash-native-audio-latest";
           global.broadcastLog(`📤 [Gemini Send] setup (model: ${modelName}, voice: ${voiceName})`, { type: "gemini_raw" });
@@ -940,7 +944,7 @@ async function handleSaveQuestionResponse(callId, phone, question, answer) {
 
 async function handleSendEmailDocument(email, subject, body, documentType) {
   try {
-    const response = await fetch(`http://localhost:${process.env.PORT || 8080}/api/integrations/send-email`, {
+    const response = await fetch(`http://127.0.0.1:${process.env.PORT || 8080}/api/integrations/send-email`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, subject, body, documentType })
@@ -961,7 +965,7 @@ async function handleSendEmailDocument(email, subject, body, documentType) {
 
 async function handleSendWhatsappMessage(phoneNumber, message, documentUrl, fileName) {
   try {
-    const response = await fetch(`http://localhost:${process.env.PORT || 8080}/api/integrations/send-whatsapp`, {
+    const response = await fetch(`http://127.0.0.1:${process.env.PORT || 8080}/api/integrations/send-whatsapp`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phoneNumber, message, documentUrl, fileName })
