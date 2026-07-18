@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // server.js
 //
 // HTTP Server + WebSocket Proxy + REST API for Admin Dashboard (Vobiz.ai Integrated)
@@ -699,115 +699,36 @@ app.get("/list-models", async (req, res) => {
 });
 
 function getHtmlTemplate(subject, body) {
-  const year = new Date().getFullYear();
-
-  // Auto-detect key:value lines in the body and render as a table
+  const now  = new Date();
+  const year = now.getFullYear();
+  const ts   = now.toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' })
+             + ' \u00b7 '
+             + now.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', hour12:true });
   const lines = (body || '').split('\n').map(l => l.trim()).filter(Boolean);
-  const tableRows = lines.map(line => {
+  const kvPairs = [], freeLines = [];
+  for (const line of lines) {
     const sep = line.indexOf(':');
-    if (sep > 0 && sep < 40) {
-      const key = line.slice(0, sep).trim().replace(/^[•\-*]\s*/, '');
-      const val = line.slice(sep + 1).trim();
-      if (key && val) {
-        return `<tr>
-          <td style="padding:10px 16px;font-size:13px;color:#64748b;font-weight:600;width:38%;background:#f8fafc;border-bottom:1px solid #e2e8f0;">${key}</td>
-          <td style="padding:10px 16px;font-size:14px;color:#1e293b;font-weight:500;border-bottom:1px solid #e2e8f0;">${val}</td>
-        </tr>`;
-      }
+    if (sep > 0 && sep < 45) {
+      const k = line.slice(0, sep).trim().replace(/^[*-]\s*/, '');
+      const v = line.slice(sep + 1).trim();
+      if (k && v) { kvPairs.push({ key: k, val: v }); continue; }
     }
-    return null;
-  }).filter(Boolean);
-
-  const hasTable = tableRows.length >= 2;
-  const plainBody = body ? body.replace(/\n/g, '<br>') : '';
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>${subject || 'ChiefVoice Notification'}</title>
-</head>
-<body style="margin:0;padding:0;background-color:#0f1117;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-<table width="100%" border="0" cellspacing="0" cellpadding="0" style="background:#0f1117;">
-  <tr>
-    <td align="center" style="padding:32px 16px 0;">
-      <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width:600px;">
-
-        <!-- Gold accent line -->
-        <tr><td style="background:linear-gradient(90deg,#f59e0b,#fbbf24,#f59e0b);height:4px;border-radius:4px 4px 0 0;"></td></tr>
-
-        <!-- Dark header -->
-        <tr>
-          <td style="background:linear-gradient(135deg,#0f1117 0%,#1e1b4b 60%,#312e81 100%);padding:36px 40px 44px;">
-            <table border="0" cellspacing="0" cellpadding="0">
-              <tr>
-                <td style="background:linear-gradient(135deg,#4f46e5,#7c3aed);border-radius:8px;padding:8px 11px;font-size:18px;line-height:1;">&#9889;</td>
-                <td style="padding-left:10px;">
-                  <div style="color:#fff;font-size:18px;font-weight:700;letter-spacing:.3px;">ChiefVoice</div>
-                  <div style="color:#94a3b8;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;margin-top:1px;">CRM Intelligence</div>
-                </td>
-              </tr>
-            </table>
-            <div style="margin-top:28px;">
-              <div style="color:#a5b4fc;font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;">CALL SUMMARY</div>
-              <div style="color:#fff;font-size:26px;font-weight:700;line-height:1.3;letter-spacing:-.3px;">${subject || 'Your ChiefVoice Summary'}</div>
-            </div>
-          </td>
-        </tr>
-
-        <!-- White body card -->
-        <tr>
-          <td style="background:#fff;padding:36px 40px 32px;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">
-            <p style="margin:0 0 16px;font-size:17px;color:#1e293b;font-weight:600;">Hello &#128075;</p>
-            <p style="margin:0 0 24px;font-size:14px;color:#475569;line-height:1.7;">Thank you for calling ChiefVoice. Your call has been processed by our AI assistant. Here is a summary of the details collected during your call:</p>
-
-            ${hasTable ? `
-            <div style="margin-bottom:24px;">
-              <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#4f46e5;margin-bottom:12px;">&#128203; Details Collected</div>
-              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;border-collapse:collapse;">
-                ${tableRows.join('')}
-              </table>
-            </div>` : `
-            <div style="background:#f8fafc;border-left:4px solid #4f46e5;border-radius:0 8px 8px 0;padding:20px 24px;margin-bottom:24px;">
-              <p style="margin:0;font-size:14px;color:#334155;line-height:1.8;">${plainBody}</p>
-            </div>`}
-
-            <!-- CTA box -->
-            <table width="100%" border="0" cellspacing="0" cellpadding="0">
-              <tr>
-                <td style="background:linear-gradient(135deg,#4f46e5,#7c3aed);border-radius:10px;padding:20px 24px;">
-                  <p style="margin:0;color:#fff;font-size:14px;font-weight:600;line-height:1.6;">&#9989; Your details have been received and our team will follow up with you shortly.</p>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-
-        <!-- Dark footer -->
-        <tr>
-          <td style="background:#1e293b;padding:24px 40px;border-radius:0 0 12px 12px;border:1px solid #334155;border-top:none;">
-            <table width="100%" border="0" cellspacing="0" cellpadding="0">
-              <tr>
-                <td>
-                  <div style="color:#fff;font-size:13px;font-weight:700;">&#9889; ChiefVoice</div>
-                  <div style="color:#64748b;font-size:11px;margin-top:4px;">&copy; ${year} ChiefVoice. All rights reserved.</div>
-                </td>
-                <td align="right" style="vertical-align:top;">
-                  <div style="color:#475569;font-size:11px;line-height:1.8;">This is an automated email.<br>Please do not reply directly.</div>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-        <tr><td style="height:32px;"></td></tr>
-
-      </table>
-    </td>
-  </tr>
-</table>
-</body>
-</html>`;
+    freeLines.push(line);
+  }
+  const nameEntry  = kvPairs.find(p => /^(name|caller|customer|client)/i.test(p.key));
+  const callerName = nameEntry ? nameEntry.val : 'there';
+  const firstName  = callerName.split(' ')[0];
+  const initials   = callerName.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase() || 'CV';
+  const dots = ['#10b981','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899'];
+  const tableRows = kvPairs.map(({ key, val }, i) => {
+    const dot = dots[i % dots.length];
+    const isStatus = /status|stage|lead|captured/i.test(key);
+    const valHtml  = isStatus
+      ? `<span style="background:rgba(16,185,129,.12);color:#059669;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;">${val}</span>`
+      : `<span style="color:#1e293b;font-weight:600;">${val}</span>`;
+    return `<tr style="background:${i%2===0?'#fff':'#f8fafc'};"><td style="padding:12px 16px;font-size:13px;color:#64748b;font-weight:500;width:40%;border-bottom:1px solid #f1f5f9;"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dot};margin-right:8px;vertical-align:middle;"></span>${key}</td><td style="padding:12px 16px;font-size:14px;border-bottom:1px solid #f1f5f9;">${valHtml}</td></tr>`;
+  }).join('');
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>${subject||'ChiefVoice'}</title></head><body style="margin:0;padding:0;background:#060818;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;"><table width="100%" border="0" cellspacing="0" cellpadding="0" style="background:#060818;"><tr><td align="center" style="padding:28px 16px 40px;"><table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width:600px;"><tr><td style="background:linear-gradient(90deg,#8b5cf6,#3b82f6,#06b6d4,#10b981);height:5px;border-radius:6px 6px 0 0;"></td></tr><tr><td style="background:linear-gradient(140deg,#0d0f2b 0%,#1a1040 50%,#0d1f3c 100%);padding:36px 40px 42px;"><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td style="vertical-align:top;padding-right:16px;"><div style="display:inline-block;background:rgba(139,92,246,.18);border:1px solid rgba(139,92,246,.4);color:#c4b5fd;font-size:10px;font-weight:700;letter-spacing:1.8px;padding:4px 12px;border-radius:20px;margin-bottom:18px;text-transform:uppercase;">AI PROCESSED</div><div style="color:#fff;font-size:30px;font-weight:800;line-height:1.2;letter-spacing:-.5px;margin-bottom:8px;">Hi, ${firstName}!</div><div style="color:#94a3b8;font-size:14px;line-height:1.6;max-width:320px;">Your ChiefVoice AI call has been processed. Here is a complete summary of your conversation.</div></td><td style="vertical-align:top;text-align:right;min-width:72px;"><div style="width:64px;height:64px;background:linear-gradient(135deg,#8b5cf6,#06b6d4);border-radius:50%;display:inline-block;text-align:center;line-height:64px;font-size:22px;font-weight:800;color:#fff;">${initials}</div></td></tr></table></td></tr><tr><td style="background:#fff;border-left:1px solid rgba(139,92,246,.15);border-right:1px solid rgba(139,92,246,.15);padding:36px 40px 32px;">${kvPairs.length>0?`<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#8b5cf6;margin-bottom:14px;">Call Details</div><table width="100%" border="0" cellspacing="0" cellpadding="0" style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;border-collapse:collapse;margin-bottom:28px;">${tableRows}</table>`:``}${freeLines.length>0?`<div style="background:linear-gradient(135deg,#f8f4ff,#f0f9ff);border-left:4px solid #8b5cf6;border-radius:0 10px 10px 0;padding:18px 22px;margin-bottom:28px;"><p style="margin:0;font-size:14px;color:#334155;line-height:1.8;">${freeLines.join('<br>')}</p></div>`:``}<div style="margin-bottom:28px;"><div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#64748b;margin-bottom:14px;">Lead Status</div><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td align="center" width="30%"><div style="width:32px;height:32px;background:linear-gradient(135deg,#8b5cf6,#06b6d4);border-radius:50%;margin:0 auto 6px;text-align:center;line-height:32px;font-size:14px;color:#fff;">&#10003;</div><div style="font-size:11px;color:#8b5cf6;font-weight:700;">Call Received</div></td><td style="padding-bottom:20px;"><div style="height:3px;background:linear-gradient(90deg,#8b5cf6,#06b6d4);border-radius:2px;"></div></td><td align="center" width="30%"><div style="width:32px;height:32px;background:linear-gradient(135deg,#06b6d4,#10b981);border-radius:50%;margin:0 auto 6px;text-align:center;line-height:32px;font-size:14px;color:#fff;">&#10003;</div><div style="font-size:11px;color:#06b6d4;font-weight:700;">Details Captured</div></td><td style="padding-bottom:20px;"><div style="height:3px;background:#e2e8f0;border-radius:2px;"></div></td><td align="center" width="30%"><div style="width:32px;height:32px;background:#f1f5f9;border:2px solid #e2e8f0;border-radius:50%;margin:0 auto 6px;text-align:center;line-height:28px;font-size:13px;color:#94a3b8;">&#8594;</div><div style="font-size:11px;color:#94a3b8;font-weight:600;">Team Review</div></td></tr></table></div><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td align="center" style="background:linear-gradient(135deg,#8b5cf6 0%,#3b82f6 50%,#06b6d4 100%);border-radius:12px;padding:17px 24px;"><span style="color:#fff;font-size:15px;font-weight:700;">Our team will contact you within 24 hours &#8594;</span></td></tr></table></td></tr><tr><td style="background:#0d1117;padding:22px 40px;border-radius:0 0 12px 12px;border:1px solid #1e293b;border-top:none;"><table width="100%" border="0" cellspacing="0" cellpadding="0"><tr><td><div style="color:#c4b5fd;font-size:13px;font-weight:700;">ChiefVoice CRM</div><div style="color:#334155;font-size:11px;margin-top:3px;">&copy; ${year} ChiefVoice</div></td><td align="right"><div style="color:#475569;font-size:11px;">${ts}</div><div style="color:#1e293b;font-size:10px;margin-top:2px;">Automated &middot; Do not reply</div></td></tr></table></td></tr><tr><td style="height:32px;"></td></tr></table></td></tr></table></body></html>`;
 }
 
 app.post('/api/integrations/send-email', async (req, res) => {
