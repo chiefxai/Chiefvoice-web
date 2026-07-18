@@ -1509,6 +1509,8 @@ app.get('/api/calls/:id/transcript', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
 app.get('/api/calls/:id/lead-responses', async (req, res) => {
   if (!supabase) return res.json([]);
   try {
