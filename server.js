@@ -1509,7 +1509,21 @@ app.get('/api/calls/:id/transcript', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+app.get('/api/calls/:id/lead-responses', async (req, res) => {
+  if (!supabase) return res.json([]);
+  try {
+    const { data, error } = await supabase
+      .from('lead_responses')
+      .select('question, answer, created_at')
+      .eq('call_id', req.params.id)
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
+
 
 // Call Logs Database API
 app.get('/api/call-logs', (req, res) => {
