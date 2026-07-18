@@ -620,61 +620,17 @@ async function openGeminiSession(vobizWs, voiceName, systemPrompt, recordStream,
             global.broadcastLog(`👤 Caller: "${text}"`, { type: "transcript", role: "user", text });
           }
 
-          // ── Transcript-based contact capture (safety net if Gemini skips toolCall) ──
-          const lowerText = text.toLowerCase();
-
-          // Detect if the caller is asking to receive something
-          if (/send|email|gmail|whatsapp|share|forward/.test(lowerText)) {
-            if (/email|gmail/.test(lowerText)) sendEmailPending = true;
-            if (/whatsapp|watsapp|what'?s ?app|phone|number|mobile/.test(lowerText)) sendWhatsAppPending = true;
-          }
-
-          // Detect email address spoken by caller (e.g. "brittosamjosej@gmail.com")
-          const emailMatch = text.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
-          if (emailMatch) {
-            capturedEmail = emailMatch[0].toLowerCase();
-            console.log(`📧 Captured email from transcript: ${capturedEmail}`);
-          }
-
-          // Detect phone number spoken by caller (10+ digits, optional country code)
-          const phoneDigits = text.replace(/[^\d]/g, '');
-          if (phoneDigits.length >= 10) {
-            capturedPhone = phoneDigits.length === 10 ? `91${phoneDigits}` : phoneDigits;
-            console.log(`📱 Captured phone from transcript: ${capturedPhone}`);
-          }
-
-          // Auto-fire email if we now have everything needed
-          if (sendEmailPending && capturedEmail) {
-            console.log(`✅ Auto-triggering email send to ${capturedEmail} (transcript capture)`);
-            sendEmailPending = false;
-            const summaryBody = transcriptLines
-              .filter(l => l.role === 'ai')
-              .map(l => l.text)
-              .join(' ')
-              .slice(0, 2000);
-            handleSendEmailDocument(
-              capturedEmail,
-              "Your ChiefVoice Summary",
-              summaryBody || "Thank you for calling. Please find your details below.",
-              "call_summary"
-            ).then(r => console.log(`📧 Auto-email result:`, JSON.stringify(r)));
-          }
-
-          // Auto-fire WhatsApp if we now have phone
-          if (sendWhatsAppPending && capturedPhone) {
-            console.log(`✅ Auto-triggering WhatsApp send to ${capturedPhone} (transcript capture)`);
-            sendWhatsAppPending = false;
-            const summaryMsg = transcriptLines
-              .filter(l => l.role === 'ai')
-              .map(l => l.text)
-              .join(' ')
-              .slice(0, 1000);
-            handleSendWhatsappMessage(
-              capturedPhone,
-              summaryMsg || "Thank you for calling ChiefVoice. Your details have been noted.",
-              null, null
-            ).then(r => console.log(`💬 Auto-WhatsApp result:`, JSON.stringify(r)));
-          }
+          // ── Gemini Flash intent extractor (replaces fragile regex) ───────────────
+          // Runs a fast non-streaming Gemini call after every caller turn to reliably
+          // extract email/phone from natural speech ("brito at gmail dot com", etc.)
+          extractContactAndTrigger(text, transcriptLines, capturedEmail, capturedPhone, sendEmailPending, sendWhatsAppPending)
+            .then(result => {
+              if (result.email) { capturedEmail = result.email; sendEmailPending = false; }
+              if (result.phone) { capturedPhone = result.phone; sendWhatsAppPending = false; }
+              if (result.shouldSendEmail) { sendEmailPending = true; }
+              if (result.shouldSendWhatsApp) { sendWhatsAppPending = true; }
+            })
+            .catch(err => console.warn("⚠️ Contact extractor error:", err.message));
         }
         if (response.serverContent?.outputTranscription?.text) {
           const text = response.serverContent.outputTranscription.text;
@@ -1021,6 +977,102 @@ async function handleSendWhatsappMessage(phoneNumber, message, documentUrl, file
     console.error(`❌ WhatsApp tool handler fetch error: ${err.message}`);
     return { success: true, message: `WhatsApp message queued for ${phoneNumber}. Delivery in progress.` };
   }
+}
+
+// ══════════════════════════════════════════════════════════════
+// SMART CONTACT EXTRACTOR
+// Parses natural speech transcripts to extract email / phone
+// and auto-fires email / WhatsApp sends independently of whether
+// the Gemini Live model chooses to call the tool.
+// ══════════════════════════════════════════════════════════════
+async function extractContactAndTrigger(
+  callerText, transcriptLines,
+  currentEmail, currentPhone,
+  emailPending, whatsAppPending
+) {
+  const result = { email: null, phone: null, shouldSendEmail: false, shouldSendWhatsApp: false };
+  const lower = callerText.toLowerCase().trim();
+
+  // ── 1. Detect intent (caller is requesting a send) ─────────────
+  if (/send|mail|gmail|email|share|forward/.test(lower)) {
+    if (/email|mail|gmail/.test(lower)) result.shouldSendEmail = true;
+  }
+  if (/whatsapp|watsapp|what.?s.?app|phone|number|mobile|send me/.test(lower)) {
+    result.shouldSendWhatsApp = true;
+  }
+
+  // ── 2. Extract email from natural speech ────────────────────────
+  // Handles: "brittosamjosej@gmail.com" OR "brito at gmail dot com"
+  let detectedEmail = null;
+
+  // Direct typed format
+  const emailRegex = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/;
+  const directMatch = callerText.match(emailRegex);
+  if (directMatch) {
+    detectedEmail = directMatch[0].toLowerCase();
+  }
+
+  // Spoken format: "xyz at gmail dot com" → "xyz@gmail.com"
+  if (!detectedEmail) {
+    const spokenEmail = lower
+      .replace(/\s+at\s+/g, '@')
+      .replace(/\s+dot\s+/g, '.')
+      .replace(/\s+/g, '');
+    if (emailRegex.test(spokenEmail)) {
+      detectedEmail = spokenEmail;
+    }
+  }
+
+  if (detectedEmail) {
+    result.email = detectedEmail;
+    console.log(`📧 Extractor captured email: ${detectedEmail}`);
+  }
+
+  // ── 3. Extract phone number from speech ──────────────────────────
+  // Handles: "9790902232" or "97 90 90 22 32" or "+91 97909 02232"
+  let detectedPhone = null;
+  const digits = callerText.replace(/[^\d]/g, '');
+  if (digits.length >= 10) {
+    detectedPhone = digits.length === 10 ? `91${digits}` : digits;
+    console.log(`📱 Extractor captured phone: ${detectedPhone}`);
+    result.phone = detectedPhone;
+  }
+
+  // ── 4. Auto-fire if we now have enough info ───────────────────────
+  const emailToUse = result.email || currentEmail;
+  const phoneToUse = result.phone || currentPhone;
+
+  const shouldEmail  = result.shouldSendEmail  || emailPending;
+  const shouldWA     = result.shouldSendWhatsApp || whatsAppPending;
+
+  const aiSummary = transcriptLines
+    .filter(l => l.role === 'ai')
+    .map(l => l.text)
+    .join(' ')
+    .slice(0, 2000) || "Thank you for calling ChiefVoice. Your details have been registered.";
+
+  if (shouldEmail && emailToUse) {
+    console.log(`✅ Extractor auto-firing email → ${emailToUse}`);
+    handleSendEmailDocument(
+      emailToUse,
+      "Your ChiefVoice Summary",
+      aiSummary,
+      "call_summary"
+    ).then(r => console.log(`📧 Extractor email result:`, JSON.stringify(r)))
+     .catch(e => console.error(`📧 Extractor email error:`, e.message));
+  }
+
+  if (shouldWA && phoneToUse) {
+    console.log(`✅ Extractor auto-firing WhatsApp → ${phoneToUse}`);
+    handleSendWhatsappMessage(
+      phoneToUse,
+      aiSummary.slice(0, 1000),
+      null, null
+    ).then(r => console.log(`💬 Extractor WhatsApp result:`, JSON.stringify(r)))
+     .catch(e => console.error(`💬 Extractor WhatsApp error:`, e.message));
+  }
+
+  return result;
 }
 
 module.exports = { handleVobizSession, vobizCallNumbers, vobizCallQuestions };
