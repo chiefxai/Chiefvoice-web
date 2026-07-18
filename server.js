@@ -218,6 +218,7 @@ app.post("/api/vobiz/incoming", (req, res) => {
   res.set("Content-Type", "text/xml");
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
+  <Record maxLength="3600" />
   <Stream bidirectional="true" keepCallAlive="true" contentType="audio/x-l16;rate=16000">wss://${req.headers.host}/vobiz/stream</Stream>
 </Response>`);
 });
@@ -271,7 +272,8 @@ app.post("/api/vobiz/call", async (req, res) => {
           to: phoneNumber,
           from: vobizNumber,
           answer_url: callbackUrl,
-          answer_method: "POST"
+          answer_method: "POST",
+          record: true
         })
       }
     );
