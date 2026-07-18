@@ -1,0 +1,231 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChiefVoice — Call History</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg:#060818; --surface:#0d1117; --card:#111827; --border:rgba(255,255,255,0.07);
+      --violet:#8b5cf6; --cyan:#06b6d4; --emerald:#10b981; --amber:#f59e0b;
+      --red:#ef4444; --text:#e2e8f0; --muted:#64748b; --blue:#3b82f6;
+    }
+    body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; min-height:100vh; }
+    .accent-bar { height:3px; background:linear-gradient(90deg,var(--violet),var(--blue),var(--cyan),var(--emerald)); }
+    .navbar { display:flex; align-items:center; justify-content:space-between; padding:16px 28px; border-bottom:1px solid var(--border); background:rgba(6,8,24,.95); position:sticky; top:0; z-index:50; backdrop-filter:blur(12px); }
+    .nav-brand { display:flex; align-items:center; gap:10px; text-decoration:none; }
+    .nav-logo { width:34px; height:34px; background:linear-gradient(135deg,var(--violet),var(--cyan)); border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:16px; }
+    .nav-title { font-size:15px; font-weight:700; color:#fff; }
+    .nav-sub   { font-size:10px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; }
+    .nav-back  { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:13px; text-decoration:none; border:1px solid var(--border); border-radius:8px; padding:6px 14px; transition:all .2s; }
+    .nav-back:hover { color:#fff; border-color:var(--violet); }
+    .main { padding:32px 28px; max-width:1100px; margin:0 auto; }
+    .page-title { font-size:26px; font-weight:800; color:#fff; letter-spacing:-.5px; margin-bottom:4px; }
+    .page-sub { font-size:14px; color:var(--muted); margin-bottom:28px; }
+    .stats-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:16px; margin-bottom:32px; }
+    .stat-card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px; }
+    .stat-label { font-size:11px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; margin-bottom:8px; }
+    .stat-value { font-size:28px; font-weight:800; color:#fff; }
+    .stat-sub   { font-size:12px; color:var(--muted); margin-top:3px; }
+    .stat-card.violet  { border-color:rgba(139,92,246,.3); }
+    .stat-card.emerald { border-color:rgba(16,185,129,.3); }
+    .stat-card.amber   { border-color:rgba(245,158,11,.3); }
+    .stat-card.red     { border-color:rgba(239,68,68,.3); }
+    .search-bar { display:flex; align-items:center; gap:12px; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:0 16px; margin-bottom:20px; transition:border-color .2s; }
+    .search-bar:focus-within { border-color:var(--violet); }
+    .search-input { background:transparent; border:none; outline:none; color:var(--text); font-size:14px; padding:14px 0; flex:1; }
+    .search-input::placeholder { color:var(--muted); }
+    .filters { display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
+    .filter-pill { padding:5px 14px; border-radius:20px; font-size:12px; font-weight:600; border:1px solid var(--border); color:var(--muted); cursor:pointer; transition:all .2s; background:transparent; }
+    .filter-pill.active { background:var(--violet); border-color:var(--violet); color:#fff; }
+    .filter-pill:hover:not(.active) { border-color:var(--violet); color:#fff; }
+    .calls-table { width:100%; border-collapse:collapse; }
+    .calls-table thead tr { border-bottom:1px solid var(--border); }
+    .calls-table th { text-align:left; padding:10px 16px; font-size:11px; font-weight:600; color:var(--muted); letter-spacing:.8px; text-transform:uppercase; }
+    .calls-table tbody tr { border-bottom:1px solid var(--border); cursor:pointer; transition:background .15s; }
+    .calls-table tbody tr:hover { background:rgba(139,92,246,.06); }
+    .calls-table td { padding:14px 16px; font-size:14px; vertical-align:middle; }
+    .caller-cell { display:flex; align-items:center; gap:10px; }
+    .caller-avatar { width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,var(--violet),var(--cyan)); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; color:#fff; flex-shrink:0; }
+    .caller-number { font-weight:600; color:#fff; font-size:14px; }
+    .caller-agent  { font-size:12px; color:var(--muted); margin-top:1px; }
+    .sentiment-badge { display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:600; }
+    .sentiment-badge.Positive { background:rgba(16,185,129,.15); color:#34d399; }
+    .sentiment-badge.Neutral  { background:rgba(100,116,139,.15); color:#94a3b8; }
+    .sentiment-badge.Negative { background:rgba(239,68,68,.15); color:#f87171; }
+    .duration-cell { color:var(--muted); font-size:13px; }
+    .recording-btn { display:inline-flex; align-items:center; gap:5px; padding:5px 12px; border-radius:8px; font-size:12px; font-weight:600; background:rgba(139,92,246,.15); border:1px solid rgba(139,92,246,.3); color:var(--violet); cursor:pointer; transition:all .2s; }
+    .recording-btn:hover { background:rgba(139,92,246,.3); }
+    .recording-btn.no-rec { background:rgba(255,255,255,.04); border-color:var(--border); color:var(--muted); cursor:default; }
+    .view-btn { padding:6px 14px; border-radius:8px; font-size:12px; font-weight:600; background:transparent; border:1px solid var(--border); color:var(--muted); cursor:pointer; transition:all .2s; }
+    .view-btn:hover { border-color:var(--violet); color:#fff; }
+    .empty-state { text-align:center; padding:80px 20px; color:var(--muted); font-size:14px; }
+    .empty-icon { font-size:48px; margin-bottom:16px; }
+    .loading { display:flex; align-items:center; justify-content:center; padding:60px; color:var(--muted); gap:10px; }
+    .spinner { width:20px; height:20px; border:2px solid var(--border); border-top-color:var(--violet); border-radius:50%; animation:spin .7s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.75); display:flex; align-items:center; justify-content:center; z-index:100; opacity:0; pointer-events:none; transition:opacity .2s; backdrop-filter:blur(4px); }
+    .modal-overlay.open { opacity:1; pointer-events:all; }
+    .modal { background:var(--card); border:1px solid var(--border); border-radius:16px; width:90%; max-width:720px; max-height:88vh; overflow:hidden; display:flex; flex-direction:column; transform:scale(.97); transition:transform .2s; }
+    .modal-overlay.open .modal { transform:scale(1); }
+    .modal-header { display:flex; align-items:center; justify-content:space-between; padding:20px 24px; border-bottom:1px solid var(--border); background:linear-gradient(135deg,rgba(139,92,246,.08),transparent); }
+    .modal-title { font-size:17px; font-weight:700; color:#fff; }
+    .modal-sub   { font-size:12px; color:var(--muted); margin-top:3px; }
+    .modal-close { width:32px; height:32px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--muted); font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .2s; }
+    .modal-close:hover { border-color:var(--red); color:var(--red); }
+    .modal-body { flex:1; overflow-y:auto; padding:24px; }
+    .audio-section { background:linear-gradient(135deg,rgba(139,92,246,.1),rgba(6,182,212,.05)); border:1px solid rgba(139,92,246,.2); border-radius:12px; padding:20px; margin-bottom:24px; }
+    .audio-label { font-size:11px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:var(--violet); margin-bottom:12px; }
+    audio { width:100%; border-radius:8px; outline:none; }
+    .transcript-label { font-size:11px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); margin-bottom:16px; }
+    .transcript-lines { display:flex; flex-direction:column; gap:12px; }
+    .transcript-line { display:flex; gap:12px; align-items:flex-start; }
+    .tl-role { min-width:48px; padding:3px 8px; border-radius:6px; font-size:10px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; text-align:center; }
+    .tl-role.user { background:rgba(6,182,212,.15); color:var(--cyan); }
+    .tl-role.ai   { background:rgba(139,92,246,.15); color:var(--violet); }
+    .tl-text { font-size:14px; color:var(--text); line-height:1.6; flex:1; padding-top:2px; }
+    .transcript-raw { background:rgba(255,255,255,.03); border:1px solid var(--border); border-radius:8px; padding:16px; font-size:13px; color:var(--text); line-height:1.7; white-space:pre-wrap; word-break:break-word; }
+    .meta-chips { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px; }
+    .meta-chip { display:flex; align-items:center; gap:6px; padding:5px 12px; background:rgba(255,255,255,.04); border:1px solid var(--border); border-radius:8px; font-size:12px; color:var(--muted); }
+    .meta-chip span { color:var(--text); font-weight:600; }
+    @media(max-width:700px){ .main{padding:20px 16px;} .calls-table th:nth-child(3),.calls-table td:nth-child(3),.calls-table th:nth-child(5),.calls-table td:nth-child(5){display:none;} .stats-row{grid-template-columns:1fr 1fr;} }
+  </style>
+</head>
+<body>
+<div class="accent-bar"></div>
+<nav class="navbar">
+  <a class="nav-brand" href="/">
+    <div class="nav-logo">⚡</div>
+    <div><div class="nav-title">ChiefVoice</div><div class="nav-sub">CRM Intelligence</div></div>
+  </a>
+  <a class="nav-back" href="/">← Dashboard</a>
+</nav>
+<div class="main">
+  <div class="page-title">📞 Call History</div>
+  <div class="page-sub">All incoming AI-handled calls — with transcripts and recordings</div>
+  <div class="stats-row">
+    <div class="stat-card violet"><div class="stat-label">Total Calls</div><div class="stat-value" id="stat-total">—</div><div class="stat-sub">All time</div></div>
+    <div class="stat-card emerald"><div class="stat-label">Positive</div><div class="stat-value" id="stat-positive">—</div><div class="stat-sub">Sentiment</div></div>
+    <div class="stat-card amber"><div class="stat-label">Avg Duration</div><div class="stat-value" id="stat-avg-dur">—</div><div class="stat-sub">Per call</div></div>
+    <div class="stat-card red"><div class="stat-label">With Recordings</div><div class="stat-value" id="stat-recordings">—</div><div class="stat-sub">Stored in cloud</div></div>
+  </div>
+  <div class="search-bar"><span>🔍</span><input class="search-input" id="search-input" type="text" placeholder="Search by caller, agent, sentiment…" /></div>
+  <div class="filters">
+    <button class="filter-pill active" data-filter="all">All Calls</button>
+    <button class="filter-pill" data-filter="Positive">✅ Positive</button>
+    <button class="filter-pill" data-filter="Neutral">😐 Neutral</button>
+    <button class="filter-pill" data-filter="Negative">❌ Negative</button>
+    <button class="filter-pill" data-filter="recording">🎙️ Has Recording</button>
+  </div>
+  <div id="table-container"><div class="loading"><div class="spinner"></div> Loading calls…</div></div>
+</div>
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <div><div class="modal-title" id="modal-title">Call Detail</div><div class="modal-sub" id="modal-sub"></div></div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="meta-chips" id="modal-chips"></div>
+      <div class="audio-section" id="audio-section" style="display:none;"><div class="audio-label">🎙️ Call Recording</div><audio id="audio-player" controls></audio></div>
+      <div><div class="transcript-label">📄 Conversation Transcript</div><div id="transcript-container"></div></div>
+    </div>
+  </div>
+</div>
+<script>
+let allCalls=[], activeFilter='all', searchQuery='';
+async function loadCalls(){
+  try{
+    const r=await fetch('/api/calls'); allCalls=await r.json();
+    updateStats(); renderTable();
+  } catch(e){ document.getElementById('table-container').innerHTML=`<div class="empty-state"><div class="empty-icon">⚠️</div><div>Failed: ${e.message}</div></div>`; }
+}
+function updateStats(){
+  const t=allCalls.length, p=allCalls.filter(c=>c.sentiment==='Positive').length,
+        avg=t?Math.round(allCalls.reduce((a,c)=>a+(c.duration_seconds||0),0)/t):0,
+        r=allCalls.filter(c=>c.recording_url).length;
+  document.getElementById('stat-total').textContent=t;
+  document.getElementById('stat-positive').textContent=p;
+  document.getElementById('stat-avg-dur').textContent=avg+'s';
+  document.getElementById('stat-recordings').textContent=r;
+}
+function getFiltered(){
+  return allCalls.filter(c=>{
+    const ms=activeFilter==='all'||(activeFilter==='recording'&&c.recording_url)||c.sentiment===activeFilter;
+    const q=searchQuery.toLowerCase();
+    const mq=!q||(c.caller_number||'').toLowerCase().includes(q)||(c.agent_name||'').toLowerCase().includes(q)||(c.sentiment||'').toLowerCase().includes(q);
+    return ms&&mq;
+  });
+}
+function fmtDur(s){if(!s)return'—';const m=Math.floor(s/60),r=s%60;return m?`${m}m ${r}s`:`${r}s`;}
+function esc(t){return(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function renderTable(){
+  const calls=getFiltered();
+  if(!calls.length){document.getElementById('table-container').innerHTML=`<div class="empty-state"><div class="empty-icon">📭</div><div>No calls found.</div></div>`;return;}
+  const rows=calls.map(c=>{
+    const init=(c.caller_number||'UN').replace(/\D/g,'').slice(-4)||'UN';
+    const d=new Date(c.created_at);
+    const ds=d.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
+    const ts=d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true});
+    const sent=c.sentiment||'Neutral';
+    const dot=sent==='Positive'?'🟢':sent==='Negative'?'🔴':'⚪';
+    const hasRec=!!c.recording_url;
+    return `<tr onclick="openModal('${c.id}')">
+      <td><div class="caller-cell"><div class="caller-avatar">${init}</div><div><div class="caller-number">${esc(c.caller_number||'Unknown')}</div><div class="caller-agent">${esc(c.agent_name||'—')} · ${esc(c.language||'—')}</div></div></div></td>
+      <td><span class="sentiment-badge ${sent}">${dot} ${sent}</span></td>
+      <td class="duration-cell">${fmtDur(c.duration_seconds)}</td>
+      <td><span class="duration-cell" style="font-size:12px;">${ds}<br>${ts}</span></td>
+      <td>${hasRec?`<span class="recording-btn" onclick="event.stopPropagation();openModal('${c.id}')">▶ Play</span>`:`<span class="recording-btn no-rec">No recording</span>`}</td>
+      <td><button class="view-btn" onclick="event.stopPropagation();openModal('${c.id}')">View →</button></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('table-container').innerHTML=`<table class="calls-table"><thead><tr><th>Caller</th><th>Sentiment</th><th>Duration</th><th>Date & Time</th><th>Recording</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+async function openModal(id){
+  const c=allCalls.find(x=>x.id===id); if(!c)return;
+  const d=new Date(c.created_at);
+  const ds=d.toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'})+' · '+d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true});
+  document.getElementById('modal-title').textContent=`Call from ${c.caller_number||'Unknown'}`;
+  document.getElementById('modal-sub').textContent=ds;
+  const sent=c.sentiment||'Neutral', dot=sent==='Positive'?'🟢':sent==='Negative'?'🔴':'⚪';
+  document.getElementById('modal-chips').innerHTML=`
+    <div class="meta-chip">Agent <span>${esc(c.agent_name||'—')}</span></div>
+    <div class="meta-chip">Language <span>${esc(c.language||'—')}</span></div>
+    <div class="meta-chip">Duration <span>${fmtDur(c.duration_seconds||0)}</span></div>
+    <div class="meta-chip">Sentiment <span>${dot} ${sent}</span></div>`;
+  const as=document.getElementById('audio-section'), ap=document.getElementById('audio-player');
+  if(c.recording_url){as.style.display='block';ap.src=c.recording_url;}else{as.style.display='none';ap.src='';}
+  renderTranscript(c.transcript);
+  document.getElementById('modal-overlay').classList.add('open');
+  document.body.style.overflow='hidden';
+}
+function renderTranscript(raw){
+  const el=document.getElementById('transcript-container');
+  if(!raw){el.innerHTML=`<div class="empty-state" style="padding:24px 0;"><div class="empty-icon">💬</div><div>No transcript for this call.</div></div>`;return;}
+  const lines=raw.split('\n').map(l=>l.trim()).filter(Boolean);
+  const parsed=lines.map(l=>{
+    const ai=l.match(/^(?:AI|Agent|Arjun|Priya|Dev|Kavya|assistant|model)[:：]\s*(.*)/i);
+    const usr=l.match(/^(?:User|Caller|Customer|Human)[:：]\s*(.*)/i);
+    if(ai)  return{role:'ai',  text:ai[1]};
+    if(usr) return{role:'user',text:usr[1]};
+    return null;
+  }).filter(Boolean);
+  if(parsed.length>=2){
+    el.innerHTML=`<div class="transcript-lines">${parsed.map(l=>`<div class="transcript-line"><div class="tl-role ${l.role}">${l.role==='ai'?'🤖 AI':'👤 You'}</div><div class="tl-text">${esc(l.text)}</div></div>`).join('')}</div>`;
+  } else {
+    el.innerHTML=`<div class="transcript-raw">${esc(raw)}</div>`;
+  }
+}
+function closeModal(){document.getElementById('modal-overlay').classList.remove('open');document.getElementById('audio-player').pause();document.body.style.overflow='';}
+document.getElementById('search-input').addEventListener('input',e=>{searchQuery=e.target.value;renderTable();});
+document.querySelectorAll('.filter-pill').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.filter-pill').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); activeFilter=b.dataset.filter; renderTable();
+}));
+document.getElementById('modal-overlay').addEventListener('click',e=>{if(e.target===document.getElementById('modal-overlay'))closeModal();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+loadCalls();
+</script>
+</body>
+</html>

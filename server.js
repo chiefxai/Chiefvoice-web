@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // server.js
 //
 // HTTP Server + WebSocket Proxy + REST API for Admin Dashboard (Vobiz.ai Integrated)
@@ -1479,10 +1479,43 @@ app.patch('/api/workflows/:id', (req, res) => {
   res.json(updated);
 });
 
+// ── Supabase Calls API (transcripts + recordings) ──────────────────
+app.get('/api/calls', async (req, res) => {
+  if (!supabase) return res.json([]);
+  try {
+    const { data, error } = await supabase
+      .from('calls')
+      .select('id, caller_number, agent_name, language, duration_seconds, sentiment, recording_url, created_at, transcript')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err) {
+    console.error('❌ /api/calls error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/calls/:id/transcript', async (req, res) => {
+  if (!supabase) return res.json({ transcript: '' });
+  try {
+    const { data, error } = await supabase
+      .from('calls')
+      .select('id, caller_number, agent_name, duration_seconds, sentiment, recording_url, created_at, transcript')
+      .eq('id', req.params.id)
+      .single();
+    if (error) throw error;
+    res.json(data || {});
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Call Logs Database API
 app.get('/api/call-logs', (req, res) => {
   res.json(readAll('calllogs', initialCallLogs));
 });
+
 
 app.post('/api/call-logs', (req, res) => {
   const newLog = {
