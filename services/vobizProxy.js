@@ -599,15 +599,11 @@ async function openGeminiSession(vobizWs, voiceName, systemPrompt, recordStream,
               // 1. Resample: 24kHz PCM -> 16kHz PCM for Vobiz playback
               const pcm16k = resample24To16(raw24kPCM);
 
-              // 2. Send chunk directly to Vobiz without pacing delay to prevent voice breaking
-              sendJson(vobizWs, {
-                event: "playAudio",
-                media: {
-                  contentType: "audio/x-l16",
-                  sampleRate: 16000,
-                  payload: pcm16k.toString("base64")
-                }
-              });
+              // 2. Push to pacing queue and start playing at a constant rate (avoids jitter and breaking)
+              for (let i = 0; i < pcm16k.length; i++) {
+                outboundQueue.push(pcm16k[i]);
+              }
+              startPacing();
 
               // Save to recording file
               recordStream.write(pcm16k);
