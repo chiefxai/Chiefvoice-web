@@ -384,9 +384,9 @@ async function openGeminiSession(vobizWs, voiceName, systemPrompt, recordStream,
         };
         delete payload.setup.realtimeInputConfig;
 
-        // Force enable transcription for both inbound and outbound channels
-        payload.setup.input_audio_transcription = { enabled: true };
-        payload.setup.output_audio_transcription = { enabled: true };
+        // Force enable transcription for both inbound and outbound channels by passing empty objects
+        payload.setup.input_audio_transcription = {};
+        payload.setup.output_audio_transcription = {};
 
         if (!payload.setup.generationConfig) {
           payload.setup.generationConfig = {};
